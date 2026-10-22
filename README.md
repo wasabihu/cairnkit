@@ -4,10 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)
 
-**A small agent runtime for business applications.** The application decides who is
-acting and what they may do; the model only ever proposes. Built for web apps where an AI
-assistant works on shared, real data — customer records, notes, knowledge — and a person
-stays in charge of what gets saved.
+**A small agent runtime for business applications.** Give an agent useful tools while
+keeping identity, permissions and persistence in your application. Use proposal tools
+and a host-controlled review step when a person should decide what gets saved.
 
 A cairn is a pile of stones that marks a trail so the next walker can follow it. cairnkit
 does the same for agents: approved memory, searchable history and curated skills that the
@@ -15,19 +14,42 @@ next conversation builds on.
 
 [中文说明](README.zh-CN.md)
 
+## See the approval boundary
+
+A fictional support ticket asks to change an invoice email. The agent reads it and
+creates a draft. The saved record changes only after the host's reviewer approves it.
+Rejecting the draft leaves the record untouched.
+
+![Five steps: source ticket, read, pending draft, human review, host save](docs/assets/approval-demo.gif)
+
+[Watch the 35-second walkthrough](docs/assets/cairnkit-approval-demo.mp4) ·
+[Run the example and choose approve or reject](docs/approval-demo.md)
+
+```bash
+git clone https://github.com/wasabihu/cairnkit.git
+cd cairnkit
+uv run python examples/approval.py
+```
+
+**Offline, fictional data, no API key.** The model uses predetermined `ScriptedModel`
+responses. The video replays snapshots from a real execution of that example, including
+a scripted approval choice. It demonstrates the host integration, not model quality.
+The in-memory review function is example application code, not a built-in approval service.
+
 ## Why another agent runtime
 
-Most agent frameworks assume one user and a trusted model. Business apps are different:
-many people share the same data, roles decide who may do what, and an AI must not quietly
-change records. cairnkit is built around that:
+In a business application, several people may share records, each with different roles.
+The application needs to retain control over which tools an agent can use and when a
+proposed change becomes a saved record. cairnkit provides building blocks for that:
 
 - **Identity comes from the host, never from the model.** Tools receive the signed-in
   person, their roles and the record being worked on in a `ToolContext`.
-- **Writes become drafts.** Tools declare an access level (`read`, `propose`, `write`) and
-  the roles that may use them. Memory edits arrive as reviewable plans, not silent writes.
+- **Make changes reviewable.** Tools declare an access level (`read`, `propose`, `write`)
+  and allowed roles. Your proposal handler creates drafts; your application implements
+  approval and persistence. The access label alone does not enforce human review.
 - **Memory with guard rails.** Add / patch / remove edits located by quoted text, size
   limits, prompt-injection scanning and frozen snapshots, ported from Hermes Agent.
-- **Long conversations stay cheap.** A faithful port of Hermes Agent's context compression:
+- **Compact long conversations.** A port of Hermes Agent's context compression:
   incremental structured summaries, real token anchors, cooldowns and verbatim user quotes.
 - **Small.** The core depends only on the standard library and `httpx`. No web framework,
   no database, no vector store: storage and permissions stay in your application.
@@ -122,7 +144,7 @@ Runnable examples, no API key needed:
 | Example                                                | Shows                                                      |
 | ------------------------------------------------------ | ---------------------------------------------------------- |
 | [examples/minimal.py](examples/minimal.py)             | The smallest complete agent with one tool                  |
-| [examples/approval.py](examples/approval.py)           | Roles decide which tools are offered; writes become drafts |
+| [examples/approval.py](examples/approval.py)           | Read a ticket, propose a change, approve or reject in the host |
 | [examples/read_document.py](examples/read_document.py) | Reading a PDF, Word or Excel file into Markdown            |
 
 ## Rules worth keeping

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>cairnkit · A proposal is not a saved change</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='8' rx='6' ry='4' fill='%23b94c2b'/%3E%3Cellipse cx='16' cy='17' rx='10' ry='4' fill='%23242a2b'/%3E%3Cellipse cx='16' cy='26' rx='14' ry='4' fill='%23242a2b'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main class="canvas">
+      <header>
+        <a class="brand" href="https://github.com/wasabihu/cairnkit" aria-label="cairnkit on GitHub">
+          <span class="cairn" aria-hidden="true"><i></i><i></i><i></i></span>
+          cairnkit
+        </a>
+        <div class="mode"><span></span> Offline replay <b>Python · MIT</b></div>
+      </header>
+
+      <section class="intro" aria-labelledby="headline">
+        <p class="eyebrow">A SMALL AGENT RUNTIME FOR BUSINESS APPS</p>
+        <h1 id="headline">Give AI tools.<br><span>Keep the final say.</span></h1>
+        <p class="lede">One fictional support request. A proposed change.<br>A person decides what the application saves.</p>
+      </section>
+
+      <div class="workspace" aria-label="Recorded approval workflow">
+        <section class="source panel">
+          <div class="panel-head"><span class="label">01 / SOURCE TICKET</span><span class="badge" id="ticket-id"></span></div>
+          <div class="sender"><div class="avatar">S</div><div><strong>Sam</strong><small>Support · identity supplied by the host</small></div></div>
+          <blockquote id="source-text"></blockquote>
+          <div class="tools">
+            <span class="label">TOOLS OFFERED TO THIS AGENT</span>
+            <div><code>read_ticket</code><span class="access">read</span></div>
+            <div><code>propose_invoice_email</code><span class="access propose">propose</span></div>
+            <p>Saving and approval are host actions.<br>They are not exposed as agent tools in this example.</p>
+          </div>
+        </section>
+
+        <div class="changes">
+          <section class="proposal panel" id="proposal-panel">
+            <div class="panel-head"><span class="label">02 / PROPOSED CHANGE</span><span class="badge" id="draft-status">Not created</span></div>
+            <div class="placeholder" id="draft-placeholder">The agent has not proposed a change yet.</div>
+            <div id="draft-detail" hidden>
+              <div class="diff-row old"><span>−</span><code id="before"></code></div>
+              <div class="diff-row new"><span>+</span><code id="after"></code></div>
+              <div class="provenance"><span id="draft-source"></span><span id="reviewer"></span></div>
+            </div>
+          </section>
+          <section class="record panel" id="record-panel">
+            <div class="panel-head"><span class="label">03 / SAVED RECORD</span><span class="badge" id="record-state">Unchanged</span></div>
+            <span class="field-label">Invoice email</span>
+            <strong class="record-value" id="saved-email"></strong>
+            <div class="record-bottom"><span id="version"></span><span id="save-note">No write has happened.</span></div>
+          </section>
+        </div>
+      </div>
+
+      <section class="narrative" aria-live="polite" aria-atomic="true">
+        <span id="step-count">01 / 05</span>
+        <div><h2 id="step-title"></h2><p id="step-caption"></p></div>
+      </section>
+
+      <nav class="playback" aria-label="Replay controls">
+        <button class="play" id="play" type="button">Play 35-second replay</button>
+        <div class="steps" id="steps"></div>
+        <button class="next" id="next" type="button">Next step →</button>
+      </nav>
+      <footer>
+        <span>ScriptedModel · fictional data · in-memory state · <span id="decision-source"></span></span>
+        <a href="https://github.com/wasabihu/cairnkit">github.com/wasabihu/cairnkit ↗</a>
+      </footer>
+      <p class="disclosure">This page replays snapshots exported by the Python example. It does not run a live model or approve real records. The host implements review and persistence.</p>
+      <noscript>Enable JavaScript to replay the offline example, or run examples/approval.py in a terminal.</noscript>
+    </main>
+    <script src="trace.js"></script>
+    <script src="replay.js"></script>
+  </body>
+</html>
