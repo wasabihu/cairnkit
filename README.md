@@ -59,9 +59,9 @@ change records. cairnkit is built around that:
 cairnkit is not on PyPI yet. Pin a release tag from GitHub:
 
 ```bash
-uv add "cairnkit @ git+https://github.com/wasabihu/cairnkit@v0.4.0"
+uv add "cairnkit @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
 # with document reading (adds pypdf and openpyxl):
-uv add "cairnkit[documents] @ git+https://github.com/wasabihu/cairnkit@v0.4.0"
+uv add "cairnkit[documents] @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
 ```
 
 or in `pyproject.toml`:
@@ -71,7 +71,7 @@ or in `pyproject.toml`:
 dependencies = ["cairnkit"]
 
 [tool.uv.sources]
-cairnkit = { git = "https://github.com/wasabihu/cairnkit", tag = "v0.4.0" }
+cairnkit = { git = "https://github.com/wasabihu/cairnkit", tag = "v0.4.1" }
 ```
 
 Python 3.12 or newer.

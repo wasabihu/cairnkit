@@ -21,9 +21,9 @@ cairn 是山路上堆起来的石头路标，后来的人沿着它走。cairnkit
 暂未发布到 PyPI，从 GitHub 固定版本标签安装：
 
 ```bash
-uv add "cairnkit @ git+https://github.com/wasabihu/cairnkit@v0.4.0"
+uv add "cairnkit @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
 # 需要读取 PDF / Word / Excel 时：
-uv add "cairnkit[documents] @ git+https://github.com/wasabihu/cairnkit@v0.4.0"
+uv add "cairnkit[documents] @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
 ```
 
 需要 Python 3.12 或更新版本。

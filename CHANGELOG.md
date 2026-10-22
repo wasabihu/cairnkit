@@ -2,6 +2,12 @@
 
 Versioning rules: see [README](README.md#versioning).
 
+## v0.4.1 (2026-10-22)
+
+- `documents`: text and Markdown files saved as Simplified Chinese by older Windows tools
+  (GBK / GB18030) are now read correctly instead of as Windows-1252 garbage. The result
+  carries a warning saying how the text was read. Western legacy text is unchanged.
+
 ## v0.4.0 (2026-10-22)
 
 - `make_delegate_tool(..., on_child_run=...)`: a hook that sees every finished child run

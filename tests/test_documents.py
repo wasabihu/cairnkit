@@ -299,3 +299,11 @@ def test_missing_optional_dependency_is_explained(monkeypatch):
     with pytest.raises(DocumentError) as exc:
         documents.extract_text(make_pdf(["x"]), "a.pdf")
     assert exc.value.code == "needs_extra"
+
+
+def test_chinese_legacy_text_is_read_as_gb18030_and_western_stays_cp1252():
+    chinese = extract_text("# 周末活动\n\n- 会员邀请赛".encode("gbk"), "notes.md")
+    assert chinese.text == "# 周末活动\n\n- 会员邀请赛"
+    assert "GB18030" in chinese.warnings[0]
+    western = extract_text("Crème brûlée, café".encode("cp1252"), "menu.md")
+    assert western.text == "Crème brûlée, café" and western.warnings == ("The text was not UTF-8.",)

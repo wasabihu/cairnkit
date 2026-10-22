@@ -202,10 +202,34 @@ def _text(data: bytes, limits: Limits) -> Extracted:
     try:
         return Extracted(data.decode("utf-8-sig"))
     except UnicodeDecodeError:
-        # Windows-1252 decodes almost anything; say so, as some characters may be off.
+        pass
+    if _looks_like_gb2312(data):
+        # Simplified Chinese saved by older Windows tools (GBK / GB18030).
         return Extracted(
-            data.decode("cp1252", errors="replace"), warnings=["The text was not UTF-8."]
+            data.decode("gb18030", errors="replace"),
+            warnings=["The text was not UTF-8; it was read as Chinese (GB18030)."],
         )
+    # Windows-1252 decodes almost anything; say so, as some characters may be off.
+    return Extracted(data.decode("cp1252", errors="replace"), warnings=["The text was not UTF-8."])
+
+
+def _looks_like_gb2312(data: bytes) -> bool:
+    """Every non-ASCII byte comes in a pair inside the GB2312 range (0xA1-0xFE twice).
+
+    Western legacy text fails this at once: an accented letter is one high byte followed by
+    an ASCII letter or space.
+    """
+    i, pairs = 0, 0
+    while i < len(data):
+        byte = data[i]
+        if byte < 0x80:
+            i += 1
+            continue
+        if not (0xA1 <= byte <= 0xFE and i + 1 < len(data) and 0xA1 <= data[i + 1] <= 0xFE):
+            return False
+        pairs += 1
+        i += 2
+    return pairs > 0
 
 
 # ── PDF (pypdf) ──────────────────────────────────────────────────────────────
