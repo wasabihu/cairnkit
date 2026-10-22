@@ -1,6 +1,6 @@
 # cairnkit 首发素材包
 
-本包用于 GitHub 首发，包含完整演示、Release 说明和可下载素材。X、V2EX 与 Show HN 文案仍为草稿，尚未在对应平台发布。
+GitHub 首发已完成：main 已包含完整演示和素材，v0.4.1 Release 已公开发布。X、V2EX 与 Show HN 文案仍为草稿，尚未在对应平台发布。
 
 ## 这次讲什么
 
@@ -69,7 +69,7 @@ python3 scripts/render_approval_video.py --frames .run/launch-capture
 - 390px 窄屏无水平溢出；桌面 1470px；浏览器未记录错误或警告。
 - MP4：H.264，1470 × 910，30 fps，35.000 秒，约 826 KB；GIF 约 491 KB；PNG 约 88 KB。已抽看视频中段。
 - Markdown 本地链接无缺失；生成素材中只含虚构工单及公开项目信息。
-- GitHub 远端 main 与起始提交相同，已有 v0.4.1 标签。公开 Releases 页面当时尚无 Release；本次只准备发布说明。
+- 准备素材时，GitHub 远端 main 与起始提交相同，已有 v0.4.1 标签，公开 Releases 页面尚无 Release。后续发布结果见下方记录。
 
 ## 渠道参考
 
@@ -77,3 +77,15 @@ python3 scripts/render_approval_video.py --frames .run/launch-capture
 - [V2EX 帮助](https://www.v2ex.com/help)：帖子按节点组织，支持 Markdown。使用创造者自己的说明和可运行例子。
 
 这些规则在 2026-10-22 查询；实际发布时仍以站点当前规则为准。
+
+## 发布记录
+
+2026-10-22 21:46（Asia/Shanghai）已公开发布
+[cairnkit v0.4.1](https://github.com/wasabihu/cairnkit/releases/tag/v0.4.1)。
+
+- 演示、README、测试及素材提交：[`0569fe7`](https://github.com/wasabihu/cairnkit/commit/0569fe7d757df1b3d71dd88f275b4da3d39ab346)，已推送到 main。
+- 该提交的 [GitHub CI](https://github.com/wasabihu/cairnkit/actions/runs/39789467678) 已通过；本地 112 项测试、Ruff 检查和格式检查通过。
+- 使用既有 v0.4.1 标签，仍指向 `9935982`，未移动或重建标签。扩展示例属于 main 上的后续文档更新，Release 正文已明确说明。
+- 已回读 Release：`isDraft=false`，标签为 v0.4.1，正文与 `release-v0.4.1.md` 一致。
+- 四个附件均已回下载，文件大小和 SHA-256 与本地成品一致：MP4 846,112 字节、GIF 502,626 字节、PNG 89,918 字节、SRT 633 字节。
+- 本次仅发布到 GitHub，未向 X、V2EX 或 Hacker News 发帖。
