@@ -10,12 +10,16 @@ delegate further, and each parent turn may delegate a bounded number of times.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from cairnkit.tools import ToolContext, ToolError, ToolSpec, tool_result
 
 if TYPE_CHECKING:
-    from cairnkit.loop import Agent
+    from cairnkit.loop import Agent, RunResult
+
+ChildRunHook = Callable[["Agent", "RunResult", ToolContext], None]
+"""Called after each finished child run with the child, its result and the parent's context."""
 
 DEPTH_KEY = "_delegation_depth"
 COUNT_KEY = "_delegations"
@@ -27,7 +31,10 @@ def make_delegate_tool(
     name: str = "delegate_task",
     max_per_turn: int = 3,
     roles: set[str] | None = None,
+    on_child_run: ChildRunHook | None = None,
 ) -> ToolSpec:
+    """``on_child_run`` sees every finished child run, e.g. to bill its usage (the parent's
+    ``RunResult.usage`` covers only the parent's own model calls)."""
     if not children:
         raise ValueError("at least one child agent is required")
     catalog = "; ".join(f"'{n}': {a.spec.description}" for n, a in children.items())
@@ -59,6 +66,8 @@ def make_delegate_tool(
             f"\n\nContext from the requester:\n{context}" if context else ""
         )
         result = await child.run(message, child_ctx)
+        if on_child_run is not None:
+            on_child_run(child, result, ctx)
         return tool_result(
             agent=child.spec.name,
             answer=result.text or "",

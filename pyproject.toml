@@ -1,6 +1,6 @@
 [project]
 name = "cairnkit"
-version = "0.3.0"
+version = "0.4.0"
 description = "A small agent runtime for business apps: the host owns identity, writes become drafts a person approves."
 readme = "README.md"
 license = "MIT"

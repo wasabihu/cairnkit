@@ -62,6 +62,8 @@ class RunResult:
     compressed: bool = False
     compression: CompressionResult | None = None  # the last compaction in this run
     compression_state: CompressionState | None = None  # persist it with the conversation
+    # Summary-model calls made by compaction in this run (``usage`` is the agent's own).
+    compression_usage: Usage = field(default_factory=Usage)
 
 
 @dataclass
@@ -186,6 +188,7 @@ class Agent:
         run.tried_compression = True
         compressed = await self.compressor.compress(result.messages, run.state, force=force)
         result.compression = compressed
+        result.compression_usage.add(compressed.usage)
         if not compressed.changed:
             return False
         result.messages[:] = compressed.messages

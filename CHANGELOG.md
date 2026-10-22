@@ -2,6 +2,18 @@
 
 Versioning rules: see [README](README.md#versioning).
 
+## v0.4.0 (2026-10-22)
+
+- `make_delegate_tool(..., on_child_run=...)`: a hook that sees every finished child run
+  (agent, result, parent context), so child model calls can be billed. The parent's
+  `RunResult.usage` still covers only its own calls.
+- `generate_title(..., on_usage=...)`: receives the title call's token usage, also when the
+  title is rejected.
+- `RunResult.compression_usage` and `CompressionResult.usage`: what the summary model used
+  when compaction ran, so it can be billed too.
+
+All are additions (optional arguments or new fields); existing code keeps working unchanged.
+
 ## v0.3.0 (2026-10-21)
 
 First public release. The project was developed privately as `agentcore`.

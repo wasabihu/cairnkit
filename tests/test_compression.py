@@ -96,6 +96,7 @@ async def test_repeated_compaction_updates_the_previous_summary():
         second.summary.startswith(SUMMARY[:20].replace("", "")[:0]) or "Updated." in second.summary
     )
     assert state.compression_count == 2
+    assert first.usage.calls == 1 and second.usage.calls == 1  # billable summary calls
 
 
 async def test_prompt_has_date_rule_focus_and_guidance():
@@ -311,3 +312,16 @@ def test_questions_stay_with_their_answers():
         ]
     cut = c._find_tail_cut(messages, 1)
     assert messages[cut]["role"] == "user"
+
+
+async def test_agent_reports_what_compaction_used():
+    agent = Agent(
+        AgentSpec(name="a", description="", persona="p"),
+        model=ScriptedModel([ModelResponse(content="ok", usage=Usage(prompt_tokens=50, calls=1))]),
+        compressor=compressor(ScriptedModel([say(SUMMARY)])),
+    )
+    result = await agent.run(
+        "new question", ToolContext(), history=convo(8)[1:], compression_state=CompressionState()
+    )
+    assert result.compressed and result.usage.calls == 1
+    assert result.compression_usage.calls == 1

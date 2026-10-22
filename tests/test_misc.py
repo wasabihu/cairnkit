@@ -38,3 +38,10 @@ async def test_generate_title_rejects_answer_shaped_output():
     good = await generate_title(ScriptedModel([say('{"title": "Check-in request"}')]), "x")
     bad = await generate_title(ScriptedModel([say('{"title": "' + "word " * 20 + '"}')]), "x")
     assert good == "Check-in request" and bad is None
+
+
+async def test_generate_title_reports_usage_even_when_rejected():
+    seen = []
+    bad = '{"title": "' + "word " * 20 + '"}'
+    await generate_title(ScriptedModel([say(bad)]), "x", on_usage=seen.append)
+    assert [u.calls for u in seen] == [1]

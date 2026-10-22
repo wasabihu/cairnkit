@@ -44,7 +44,7 @@ from typing import Any, Literal
 
 from cairnkit.llm.base import ChatModel
 from cairnkit.llm.errors import FailoverReason, classify_error
-from cairnkit.types import Message
+from cairnkit.types import Message, Usage
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +242,7 @@ class CompressionResult:
     tokens_after: int = 0
     reason: str | None = None  # why nothing (or less) happened
     model_calls: int = 0  # summary-model calls this compaction made
+    usage: Usage = field(default_factory=Usage)  # what those calls used
 
     @property
     def changed(self) -> bool:
@@ -578,6 +579,7 @@ class ContextCompressor:
                 response = await self.summary_model.complete(
                     [{"role": "user", "content": prompt}], max_tokens=max(budget * 2, budget + 1024)
                 )
+                result.usage.add(response.usage)
                 text = (response.content or "").strip()
                 if response.finish_reason == "length":
                     raise _SummaryError("summary hit the output limit")

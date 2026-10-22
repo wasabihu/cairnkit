@@ -122,3 +122,14 @@ async def test_background_review_reuses_system_prompt_and_only_keeps_side_effect
     assert reviewer_model.requests[0]["messages"][0]["content"] == "CHAT SYSTEM PROMPT"
     assert saved == [{"action": "add", "content": "Has a son."}]
     assert json.dumps(transcript) == before  # the main conversation is untouched
+
+
+async def test_delegation_reports_each_child_run():
+    child = _agent("researcher", ScriptedModel(responder=lambda m, t: say("x")))
+    runs = []
+    tool = make_delegate_tool(
+        {"researcher": child},
+        on_child_run=lambda agent, result, ctx: runs.append((agent.spec.name, result.usage.calls)),
+    )
+    await tool.handler({"agent": "researcher", "goal": "g"}, ToolContext(scope={}))
+    assert runs == [("researcher", 1)]

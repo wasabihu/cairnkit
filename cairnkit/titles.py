@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 
 from cairnkit.llm.base import ChatModel
+from cairnkit.types import Usage
 
 MAX_DERIVED_TITLE_CHARS = 60
 MAX_TITLE_WORDS = 12
@@ -51,11 +53,22 @@ def _extract(raw: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-async def generate_title(model: ChatModel, first_message: str) -> str | None:
-    """Ask a (cheap) model for a title. Returns None instead of a bad title."""
+async def generate_title(
+    model: ChatModel,
+    first_message: str,
+    *,
+    on_usage: Callable[[Usage], None] | None = None,
+) -> str | None:
+    """Ask a (cheap) model for a title. Returns None instead of a bad title.
+
+    ``on_usage`` receives the call's token usage, so it can be billed like any other call
+    (also when the title is rejected).
+    """
     response = await model.complete(
         [{"role": "user", "content": _PROMPT + first_message[:2000]}], max_tokens=64
     )
+    if on_usage is not None:
+        on_usage(response.usage)
     title = _extract(response.content or "")
     if not title or len(title.split()) > MAX_TITLE_WORDS:
         return None
