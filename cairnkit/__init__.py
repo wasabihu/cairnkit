@@ -1,6 +1,6 @@
 """cairnkit: a small agent runtime for business applications.
 
-Design and several algorithms are ported from Hermes Agent v0.22.2 (MIT, Nous Research);
+Design and several algorithms are ported from Hermes Agent v0.23.0 (MIT, Nous Research);
 see NOTICE.md. Public API:
 """
 

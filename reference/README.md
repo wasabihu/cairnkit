@@ -1,7 +1,7 @@
 # Hermes Agent reference source
 
 - Source: <https://github.com/NousResearch/hermes-agent>
-- Version followed: **v0.22.2** (released 2026-10-15), commit `d923a5eb487a17c0a68801bba9ef0f56c81040a8`
+- Version followed: **v0.23.0** (released 2026-11-05), commit `2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`
 - License: MIT. Ported code keeps Hermes' copyright notice and names its source file in the
   header (see [NOTICE.md](../NOTICE.md)).
 - Only for reading and comparing; it is not run or installed. About 330 MB, so it is **not
@@ -11,7 +11,7 @@
 
 ```bash
 cd reference
-git clone --depth 1 --branch v0.22.2 https://github.com/NousResearch/hermes-agent.git
+git clone --depth 1 --branch v0.23.0 https://github.com/NousResearch/hermes-agent.git
 ```
 
 ## Upgrade

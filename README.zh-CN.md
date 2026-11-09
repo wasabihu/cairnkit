@@ -36,12 +36,12 @@ uv run python examples/approval.py
 
 ## 安装
 
-暂未发布到 PyPI，从 GitHub 固定版本标签安装：
-
 ```bash
-uv add "cairnkit @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
+pip install cairnkit
+# 或者
+uv add cairnkit
 # 需要读取 PDF / Word / Excel 时：
-uv add "cairnkit[documents] @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
+pip install "cairnkit[documents]"   # 或：uv add "cairnkit[documents]"
 ```
 
 需要 Python 3.12 或更新版本。
@@ -56,7 +56,7 @@ uv add "cairnkit[documents] @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
 
 ## 和 Hermes Agent 的关系
 
-很多机制和算法移植自 [Hermes Agent](https://github.com/NousResearch/hermes-agent) v0.22.2（MIT，Nous Research），每个移植文件头部都写明了来源。Hermes 是带文件、终端和几十个平台的个人助手；cairnkit 保留算法，替换了存储、配置和权限三层，以适配多人使用的网站。对照表见 [docs/hermes-porting.md](docs/hermes-porting.md)。cairnkit 与 Nous Research 没有隶属或背书关系。
+很多机制和算法移植自 [Hermes Agent](https://github.com/NousResearch/hermes-agent) v0.23.0（MIT，Nous Research），每个移植文件头部都写明了来源。Hermes 是带文件、终端和几十个平台的个人助手；cairnkit 保留算法，替换了存储、配置和权限三层，以适配多人使用的网站。对照表见 [docs/hermes-porting.md](docs/hermes-porting.md)。cairnkit 与 Nous Research 没有隶属或背书关系。
 
 ## 版本
 

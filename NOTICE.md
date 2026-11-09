@@ -1,7 +1,7 @@
 # Notice
 
-cairnkit ports the design and several algorithms of **Hermes Agent v0.22.2**
-(<https://github.com/NousResearch/hermes-agent>, commit `d923a5e`).
+cairnkit ports the design and several algorithms of **Hermes Agent v0.23.0**
+(<https://github.com/NousResearch/hermes-agent>, commit `2bd378e`).
 
 ```
 MIT License

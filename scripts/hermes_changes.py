@@ -2,7 +2,7 @@
 
 Usage (from the repository root, with reference/hermes-agent checked out):
 
-    python scripts/hermes_changes.py v0.22.2 v0.23.0
+    uv run python scripts/hermes_changes.py v0.22.2 v0.23.0
 
 It reads the "Adapted from / Ported from hermes-agent ..." header of every module in
 cairnkit/, collects the Hermes paths named there, and runs ``git diff --stat`` for them in

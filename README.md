@@ -78,22 +78,12 @@ proposed change becomes a saved record. cairnkit provides building blocks for th
 
 ## Install
 
-cairnkit is not on PyPI yet. Pin a release tag from GitHub:
-
 ```bash
-uv add "cairnkit @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
+pip install cairnkit
+# or
+uv add cairnkit
 # with document reading (adds pypdf and openpyxl):
-uv add "cairnkit[documents] @ git+https://github.com/wasabihu/cairnkit@v0.4.1"
-```
-
-or in `pyproject.toml`:
-
-```toml
-[project]
-dependencies = ["cairnkit"]
-
-[tool.uv.sources]
-cairnkit = { git = "https://github.com/wasabihu/cairnkit", tag = "v0.4.1" }
+pip install "cairnkit[documents]"   # or: uv add "cairnkit[documents]"
 ```
 
 Python 3.12 or newer.
@@ -182,7 +172,7 @@ else:
 ## Relationship to Hermes Agent
 
 Many mechanisms and algorithms are ported from
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) v0.22.2 (MIT, Nous Research):
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) v0.23.0 (MIT, Nous Research):
 the prompt layers, the tool loop, memory editing rules, history search, skills, context
 compression, background review, curation and delegation. Every ported file names its
 Hermes source in its header. Hermes is a personal assistant with files, terminals and
