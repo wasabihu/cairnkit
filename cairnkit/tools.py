@@ -1,4 +1,5 @@
-# Adapted from hermes-agent v0.22.2 (d923a5e): tools/registry.py
+# Adapted from hermes-agent v0.23.0 (2bd378e): tools/registry.py and
+# agent/tool_result_classification.py
 # Copyright (c) 2025 Nous Research. MIT License. Added per-call identity context and access levels.
 """Tool registry: schema, handler, access level and who may use each tool.
 
@@ -149,9 +150,26 @@ class ToolRegistry:
         )
 
 
+_FAILED_STATUSES = frozenset({"failed", "error"})
+
+
 def _looks_failed(result: str) -> bool:
+    """A JSON object is judged by its top-level shape, never by words inside its content
+    (Hermes v0.23.0): ``success: false``, a non-empty ``error``, a failed ``status``, or a
+    ``results`` batch where every item carries an error."""
     try:
         data = json.loads(result)
     except ValueError:
         return False
-    return isinstance(data, dict) and data.get("success") is False
+    if not isinstance(data, dict):
+        return False
+    if data.get("success") is False or data.get("error"):
+        return True
+    if str(data.get("status", "")).lower() in _FAILED_STATUSES:
+        return True
+    items = data.get("results")
+    return (
+        isinstance(items, list)
+        and bool(items)
+        and all(isinstance(i, dict) and i.get("error") for i in items)
+    )

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from cairnkit import (
     Agent,
     AgentSpec,
@@ -9,6 +11,7 @@ from cairnkit import (
     ToolError,
     ToolRegistry,
 )
+from cairnkit.guardrails import GuardrailController
 from tests.conftest import call, say
 
 
@@ -136,3 +139,51 @@ async def test_missing_tool_is_a_configuration_error():
         assert "ghost" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+# --- Hermes v0.23.0 ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("returned", "failed"),
+    [
+        ('{"success": false, "error": "x"}', True),
+        ('{"error": "record not found"}', True),
+        ('{"status": "failed", "detail": "upstream refused"}', True),
+        ('{"results": [{"error": "denied"}, {"error": "denied"}]}', True),
+        ('{"results": [{"error": "denied"}, {"id": 2}]}', False),  # partial: not a failure
+        ('{"items": [{"id": 1, "error": null}], "failed": 0}', False),
+        ('{"error": null, "rows": 3}', False),
+        ('{"message": "3 rows updated"}', False),
+        ('{"note": "the word \\"error\\" inside content"}', False),
+        ("plain text", False),
+    ],
+)
+async def test_tool_failure_is_judged_by_top_level_shape(returned, failed):
+    tools = ToolRegistry()
+
+    @tools.tool(name="raw", description="Returns a fixed string.")
+    def raw(args, ctx):
+        return returned
+
+    outcome = await tools.dispatch(tools.get("raw"), {}, ToolContext())
+    assert outcome.failed is failed
+
+
+def test_throttled_retries_do_not_count_as_identical_failures():
+    guard = GuardrailController(GuardrailConfig())
+    throttled = '{"success": false, "error": "Rate limit exceeded", "retry_after": 2}'
+    for _ in range(4):
+        assert guard.before_call("search", {"q": "x"}).allows_execution
+        assert guard.after_call("search", {"q": "x"}, throttled, True).action == "allow"
+    # Still counted per tool, so a dead endpoint is bounded.
+    assert guard.after_call("search", {"q": "x"}, throttled, True).action == "halt"
+
+
+def test_ordinary_identical_failures_still_warn_and_block():
+    guard = GuardrailController(GuardrailConfig())
+    error = '{"success": false, "error": "bad query"}'
+    guard.after_call("search", {"q": "x"}, error, True)
+    assert guard.after_call("search", {"q": "x"}, error, True).action == "warn"
+    guard.after_call("search", {"q": "x"}, error, True)
+    assert guard.before_call("search", {"q": "x"}).action == "block"
