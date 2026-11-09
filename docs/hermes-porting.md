@@ -1,6 +1,6 @@
 # Hermes Agent porting map
 
-> Reference: Hermes Agent **v0.22.2** (commit `d923a5e`, MIT). The source can be checked out
+> Reference: Hermes Agent **v0.23.0** (commit `2bd378e`, MIT; first port from v0.22.2, `d923a5e`). The source can be checked out
 > under `reference/hermes-agent/` for comparison (see [reference/README.md](../reference/README.md)).
 > Goal: **keep Hermes' good design**, and adapt it to web applications where many people
 > share data, memory lives in a database and a person approves changes.
@@ -47,7 +47,7 @@ configuration and permissions.**
    folder and the source files listed below, and understand the constraints they protect.
 2. **Name the source.** Ported files start with:
    ```python
-   # Ported from hermes-agent v0.22.2 (d923a5e): tools/memory_tool_store.py
+   # Ported from hermes-agent v0.23.0 (2bd378e): tools/memory_tool_store.py
    # Copyright (c) 2025 Nous Research. MIT License.
    ```
 3. **Keep the algorithm, replace the shell.** Matching, truncation, limits, scanning rules
@@ -163,6 +163,7 @@ One line per Hermes release checked, including releases not followed (say why). 
 | Date       | Hermes              | Decision                              | cairnkit |
 | ---------- | ------------------- | ------------------------------------- | -------- |
 | 2026-10-20 | v0.22.2 (`d923a5e`) | Initial port, all 13 mechanisms above | v0.1.0   |
+| 2026-11-09 | v0.23.0 (`2bd378e`) | Took 13 changes, skipped 17, 2 later (below) | v0.5.0   |
 
 ### v0.23.0 (`2bd378e`), checked 2026-11-09
 
@@ -197,3 +198,14 @@ Decisions follow [upgrading-hermes.md](upgrading-hermes.md#4-decide-change-by-ch
 | Search      | Cross-profile DB moved into `session_search`, read-only handle for managed workers, shorter description         | Skip     | Profiles, worker processes and FTS5 handles belong to Hermes' storage; cairnkit's `SearchBackend` is the host's.                                                                                                                                                                                                               |
 | Review      | Memory review saves only facts grounded in the conversation, never inferred traits or one-off requests           | Take     | Matters even more with approval: every guess becomes a draft a person must reject. Added to `REVIEW_INSTRUCTION`.                                                                                                                                                                                                              |
 | Review      | Reviews off for finite turns and the safe worker; locked-skill note; usage attributed per task; secret prompt skipped | Skip     | The host decides when a review runs and bills `RunResult.usage` itself; there are no locked skills, worker modes or secret prompts in cairnkit.                                                                                                                                                                              |
+| Delegation  | Pluggable delegation backends: per-task routes (model, reasoning effort, profile), per-task refusal inside a batch, service tiers | Skip     | In cairnkit the host already chooses each child: `make_delegate_tool` takes named `Agent`s, each with its own model and tools, and a call runs one task. Per-task routing and partial refusal only matter for Hermes' parallel batches over one configurable child. Revisit if cairnkit ever runs several tasks per call. |
+| Delegation  | Worker-process child stores, one-shot schema without live `action` controls, gateway inline mode                  | Skip     | No worker processes, background children or live steering in cairnkit (children run inline, one level).                                                                                                                                                                                                                        |
+| Skills      | Index descriptions clipped at a word boundary (`clip_skill_description`)                                          | Skip     | cairnkit refuses descriptions over 60 characters when a skill is loaded or made, so there is nothing to clip.                                                                                                                                                                                                                  |
+| Skills      | Directory-tree catalog signature, config cache bounds and locking, plugin `plugin:` prefixes, secret capture per turn, shorter `skill_view` description | Skip     | Skills come from the repository or the host; there is no catalog cache, `config.yaml`, plugin namespace or secret prompt. cairnkit's `skill_view` description is already short.                                                                                                                                            |
+| Curator     | Locked skills skipped by automatic transitions; prompt says the index shows 60 chars                             | Skip     | Locks come from Hermes' skill installs; pinned skills are cairnkit's equivalent and are already untouched. cairnkit's prompt already says 60 characters.                                                                                                                                                                      |
+| Prompt      | Plugin discovery for platform hints, memory module rename, no `/steer` note in one-shot sessions                 | Skip     | Platform hints and `/steer` were never ported; the rename has no behaviour.                                                                                                                                                                                                                                                    |
+| Agent loop  | Prompt-refresh epochs, held stream transforms, `pre_llm_call` veto, Codex app-server turns, Nous/Copilot credential and billing copy, closing failed turns that end on a tool row, `prepare_ahead` hook in the tool round | Skip     | Gateway, plugin and provider features. The host stores transcripts, so closing a failed turn is its job; `prepare_ahead` is recorded as later above.                                                                                                                                                                   |
+| Security    | `tools/threat_patterns.py`                                                                                       | —        | Unchanged in v0.23.0.                                                                                                                                                                                                                                                                                                          |
+
+Modules whose Hermes sources changed but whose port did not (`delegate.py`, `skills.py`, `curator.py`,
+`prompt.py`, `loop.py`) keep their v0.22.2 header: they were checked against v0.23.0 and nothing was taken.

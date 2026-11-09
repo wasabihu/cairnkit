@@ -15,14 +15,14 @@ and note its version. The version currently followed is in
 
 ```bash
 cd reference/hermes-agent            # get it first as described in reference/README.md
-git fetch --depth 50 origin tag v0.22.2 tag <new>
+git fetch --depth 50 origin tag v0.23.0 tag <new>
 git checkout <new>
 ```
 
 ## 3. List the changes that matter
 
 ```bash
-python scripts/hermes_changes.py v0.22.2 <new>
+uv run python scripts/hermes_changes.py v0.23.0 <new>
 ```
 
 The script reads the source header (`Adapted from / Ported from hermes-agent ...`) of every
@@ -30,7 +30,7 @@ module in `cairnkit/` and lists which of those Hermes files changed, with the ma
 cairnkit module. Then read each diff:
 
 ```bash
-cd reference/hermes-agent && git diff v0.22.2..<new> -- agent/context_compressor.py
+cd reference/hermes-agent && git diff v0.23.0..<new> -- agent/context_compressor.py
 ```
 
 Also skim the release notes for **new features** worth porting (add a row to
