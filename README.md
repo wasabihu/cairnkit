@@ -146,6 +146,7 @@ Runnable examples, no API key needed:
 | [examples/minimal.py](examples/minimal.py)             | The smallest complete agent with one tool                  |
 | [examples/approval.py](examples/approval.py)           | Read a ticket, propose a change, approve or reject in the host |
 | [examples/read_document.py](examples/read_document.py) | Reading a PDF, Word or Excel file into Markdown            |
+| [examples/verify_citations.py](examples/verify_citations.py) | A read tool that checks a draft's DOIs and PMIDs with [claimcite](https://github.com/wasabihu/claimcite) before review (needs network: `uv run --with claimcite python examples/verify_citations.py`) |
 
 ## Rules worth keeping
 

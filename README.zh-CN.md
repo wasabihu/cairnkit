@@ -32,6 +32,8 @@ uv run python examples/approval.py
 
 模块清单、接入步骤和示例见 [英文 README](README.md)，代码示例两种语言通用。
 
+想让智能体在交给人审核之前先核对草稿里的文献引用，可以参考 [examples/verify_citations.py](examples/verify_citations.py)：它把 [claimcite](https://github.com/wasabihu/claimcite) 包成一个只读工具（需要联网：`uv run --with claimcite python examples/verify_citations.py`）。
+
 ## 安装
 
 暂未发布到 PyPI，从 GitHub 固定版本标签安装：
