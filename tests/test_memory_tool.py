@@ -103,3 +103,56 @@ async def test_memory_tool_round_trip():
 
 async def _call(tool, args):
     return tool.handler(args, ToolContext(principal={"id": "u1"}))
+
+
+# --- Hermes v0.23.0 ---------------------------------------------------------------------------
+
+
+def test_schema_advertises_only_the_operations_shape():
+    one = make_memory_tool(FakeStore([]), {"member": "facts"})
+    assert set(one.parameters["properties"]) == {"target", "operations"}
+    assert one.parameters["required"] == ["operations"]
+    item = one.parameters["properties"]["operations"]["items"]
+    assert "patch" in item["properties"]["old_text"]["description"]
+    assert "one-item list" in one.parameters["properties"]["operations"]["description"]
+    two = make_memory_tool(FakeStore([]), {"member": "facts", "house": "rules"})
+    assert two.parameters["required"] == ["target", "operations"]
+
+
+async def test_missing_operations_names_the_expected_shape():
+    tool = make_memory_tool(FakeStore([]), {"member": "facts"})
+    error = json.loads(await _call(tool, {}))
+    assert error["success"] is False and error["failure_class"] == "invalid_args"
+    assert "'operations'" in error["error"] and "one-item list" in error["error"]
+
+
+async def test_legacy_single_change_shape_and_new_text_alias_still_work():
+    store = FakeStore(["Prefers early appointments."])
+    tool = make_memory_tool(store, {"member": "facts"})
+    result = json.loads(
+        await _call(tool, {"action": "patch", "old_text": "early", "new_text": "7am"})
+    )
+    assert result["success"] and store.saved[0][1][0].after == "Prefers 7am appointments."
+
+
+def test_removing_under_a_lowered_limit_is_never_refused():
+    entries = ["a" * 40, "b" * 40, "c" * 40]  # 126 chars, limit since lowered to 50
+    plan = plan_operations(entries, [{"action": "remove", "old_text": "a" * 40}], limit=50)
+    assert plan.entries == ["b" * 40, "c" * 40]
+    duplicate = plan_operations(entries, [{"action": "add", "content": "b" * 40}], limit=50)
+    assert duplicate.changes == []
+    with pytest.raises(MemoryPlanError):  # a batch that still adds stays bound by the limit
+        plan_operations(
+            entries,
+            [{"action": "remove", "old_text": "a" * 40}, {"action": "add", "content": "d"}],
+            limit=50,
+        )
+
+
+def test_a_lone_add_over_the_limit_says_how_much_to_free():
+    with pytest.raises(MemoryPlanError) as info:
+        plan_operations(["a" * 50], [{"action": "add", "content": "b" * 20}], limit=60)
+    assert info.value.failure_class == "over_limit"
+    assert "Memory at 50/60 chars; adding this entry (20 chars)" in info.value.message
+    assert "would exceed the limit by 13 chars" in info.value.message
+    assert info.value.extra["current_entries"] == ["a" * 50]

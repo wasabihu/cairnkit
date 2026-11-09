@@ -1,4 +1,4 @@
-# Adapted from hermes-agent v0.22.2 (d923a5e): tools/memory_tool.py, tools/memory_tool_store.py
+# Adapted from hermes-agent v0.23.0 (2bd378e): tools/memory_tool.py, tools/memory_tool_store.py
 # Copyright (c) 2025 Nous Research. MIT License.
 """Bounded memory snapshots and write screening.
 
@@ -90,6 +90,12 @@ _MEMORY_DESCRIPTION = (
 )
 
 
+_MISSING_OPERATIONS = (
+    "Missing required parameter: 'operations', a list of {action: add/patch/remove, content?, "
+    "old_text?} changes; a single change is a one-item list."
+)
+
+
 def make_memory_tool(
     store: MemoryStore,
     targets: dict[str, str],
@@ -107,7 +113,12 @@ def make_memory_tool(
             raise ToolError(f"target must be one of {', '.join(targets)}")
         operations = args.get("operations")
         if not operations:
-            operations = [{k: args.get(k) for k in ("action", "content", "old_text") if k in args}]
+            # Only operations[] is advertised, but models drift and older transcripts replay the
+            # single-change shape (and the new_text alias), so it is still accepted.
+            if not args.get("action"):
+                return tool_error(_MISSING_OPERATIONS, failure_class="invalid_args")
+            legacy = ("action", "content", "old_text", "new_text")
+            operations = [{k: args[k] for k in legacy if k in args}]
         if not isinstance(operations, list) or not all(isinstance(o, dict) for o in operations):
             raise ToolError("operations must be a list of {action, content?, old_text?} objects")
         entries = store.load(target, ctx)
@@ -139,23 +150,36 @@ def make_memory_tool(
                 "target": {"type": "string", "enum": list(targets)},
                 "operations": {
                     "type": "array",
+                    "description": (
+                        "Changes applied atomically in one call against the final size limit; "
+                        "a single change is a one-item list."
+                    ),
                     "items": {
                         "type": "object",
                         "properties": {
                             "action": {"type": "string", "enum": ["add", "patch", "remove"]},
-                            "content": {"type": "string"},
-                            "old_text": {"type": "string"},
+                            "content": {
+                                "type": "string",
+                                "description": (
+                                    "Required for 'add' and 'patch'. For 'add', the new entry. "
+                                    "For 'patch', the text that replaces old_text; the rest of "
+                                    "the entry is kept."
+                                ),
+                            },
+                            "old_text": {
+                                "type": "string",
+                                "description": (
+                                    "Required for 'patch' and 'remove': text from one entry. "
+                                    "'patch' replaces exactly this span (it must occur once in "
+                                    "the entry); 'remove' deletes the whole entry. Omit for 'add'."
+                                ),
+                            },
                         },
                         "required": ["action"],
+                        "additionalProperties": False,
                     },
                 },
-                "action": {
-                    "type": "string",
-                    "enum": ["add", "patch", "remove"],
-                    "description": "Single-change shape; omit when using operations.",
-                },
-                "content": {"type": "string"},
-                "old_text": {"type": "string"},
             },
+            "required": ["target", "operations"] if len(targets) > 1 else ["operations"],
         },
     )

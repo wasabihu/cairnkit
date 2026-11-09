@@ -1,11 +1,13 @@
-# Ported from hermes-agent v0.22.2 (d923a5e): tools/memory_tool_store.py and tools/memory_tool.py
+# Ported from hermes-agent v0.23.0 (2bd378e): tools/memory_tool_store.py and tools/memory_tool.py
 # Copyright (c) 2025 Nous Research. MIT License.
 # Modified: the file store is replaced by a host-provided MemoryStore; planning is pure.
 """Memory edits as a pure plan over a list of entries.
 
 Keeps Hermes' editing contract:
 * one ``operations`` batch is atomic and the character limit is checked on the result,
-  so a single call can free room and add in one go;
+  so a single call can free room and add in one go; a batch that cannot grow memory
+  (only removes, or a lone duplicate add) is never refused, so a lowered limit can be
+  pruned back under;
 * ``patch`` / ``remove`` locate the entry by text: a whole-entry exact match wins, then
   a substring, then a typography-folded substring; several distinct matches is an error;
 * a ``patch`` span must occur once in its entry and must change something;
@@ -171,7 +173,23 @@ def plan_operations(entries: list[str], operations: list[dict[str, Any]], limit:
     for op in operations:
         working = _apply_one(working, op, plan)
     new_total = total_chars(working)
-    if new_total > limit:
+    grows = not (
+        all(op.get("action") == "remove" for op in operations)
+        or (len(operations) == 1 and working == plan.entries)
+    )
+    if grows and new_total > limit:
+        if len(operations) == 1 and operations[0].get("action") == "add":
+            content = str(operations[0].get("content") or "").strip()
+            over = new_total - limit
+            raise MemoryPlanError(
+                f"Memory at {total_chars(plan.entries):,}/{limit:,} chars; adding this entry "
+                f"({len(content)} chars) would exceed the limit by {over:,} chars. Retry as ONE "
+                "operations batch that removes or shortens (patch) stale entries from "
+                f"current_entries below to free at least {over:,} chars AND adds this entry: "
+                "the limit is checked only on the batch result.",
+                "over_limit",
+                current_entries=entries,
+            )
         raise MemoryPlanError(
             f"The result would put memory at {new_total:,}/{limit:,} chars: free at least "
             f"{new_total - limit:,} chars. Retry as ONE operations batch that removes or shortens "
