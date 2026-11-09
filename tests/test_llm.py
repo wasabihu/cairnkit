@@ -154,3 +154,110 @@ async def test_all_failed():
     chain = FallbackModel([Failing("a", ModelAPIError(404, "nope"))], sleep=_no_sleep)
     with pytest.raises(AllModelsFailed):
         await chain.complete([])
+
+
+# --- Hermes v0.23.0 ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "request body too large, must be less than 20MB",  # Novita
+        "Request size exceeds the limit of 33554432",  # Z.AI
+        "Payload too large",
+        "Content-Length of the request exceeds 33554432 bytes",
+    ],
+)
+def test_byte_size_400s_mean_compress(message):
+    body = {"error": {"message": message, "type": "invalid_request_error"}}
+    verdict = classify_error(ModelAPIError(400, message, body))
+    assert verdict.reason is FailoverReason.payload_too_large and verdict.should_compress
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Request body too large for gpt-4.1 model. Max size: 8000 tokens.",  # a token cap
+        "tools[0].description content length exceeds maximum allowed",  # a field
+        "request size parameter page_size exceeds the maximum of 100",  # a parameter
+        "response size too large",
+    ],
+)
+def test_other_size_complaints_stay_format_errors(message):
+    body = {"error": {"message": message, "type": "invalid_request_error"}}
+    assert classify_error(ModelAPIError(400, message, body)).reason is FailoverReason.format_error
+
+
+def test_timeouts_say_which_phase_failed():
+    connect = classify_error(httpx.ConnectTimeout("timed out"))
+    assert connect.reason is FailoverReason.timeout and connect.retryable
+    assert connect.context == {"timeout_phase": "connect"}
+    assert "before it was established" in connect.message and "base_url" in connect.message
+    read = classify_error(httpx.ReadTimeout("timed out"))
+    assert read.context == {"timeout_phase": "read"}
+    assert "waiting for the provider to respond" in read.message and "timeout=" in read.message
+    pool = classify_error(httpx.PoolTimeout("no free connection"))
+    assert pool.reason is FailoverReason.timeout and pool.context == {}
+    assert pool.message == "no free connection"
+
+
+async def test_all_failed_names_the_timeout_phase():
+    chain = FallbackModel(
+        [Failing("a", httpx.ConnectTimeout("timed out"))], retries=0, sleep=_no_sleep
+    )
+    with pytest.raises(AllModelsFailed, match="a: timeout .Connection to the provider timed out"):
+        await chain.complete([])
+
+
+def sse(chunks: list[dict]) -> httpx.MockTransport:
+    body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+    return httpx.MockTransport(
+        lambda request: httpx.Response(
+            200, text=body, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+
+def tool_delta(index=0, id=None, name=None, arguments=None) -> dict:
+    function = {k: v for k, v in (("name", name), ("arguments", arguments)) if v is not None}
+    delta = {"index": index, "function": function, **({"id": id} if id else {})}
+    return {"choices": [{"delta": {"tool_calls": [delta]}}]}
+
+
+async def streamed_calls(*chunks: dict) -> list[tuple[str, str, str]]:
+    model = openrouter("m", api_key="k", transport=sse(list(chunks)))
+    response = await model.complete([{"role": "user", "content": "hi"}], on_delta=lambda _: None)
+    return [(c.id, c.name, c.arguments) for c in response.tool_calls]
+
+
+async def test_parallel_calls_sharing_index_zero_are_split():
+    # Ollama reuses index 0 for every call of a parallel batch, told apart only by id.
+    assert await streamed_calls(
+        tool_delta(id="a", name="search", arguments='{"q": "x"}'),
+        tool_delta(id="b", name="lookup", arguments='{"id": 1}'),
+    ) == [("a", "search", '{"q": "x"}'), ("b", "lookup", '{"id": 1}')]
+
+
+async def test_two_parallel_calls_of_one_tool_are_split_once_arguments_close():
+    assert await streamed_calls(
+        tool_delta(id="a", name="search", arguments='{"q": "x"}'),
+        tool_delta(id="b", name="search", arguments='{"q": "y"}'),
+    ) == [("a", "search", '{"q": "x"}'), ("b", "search", '{"q": "y"}')]
+
+
+async def test_fresh_id_on_every_fragment_does_not_split_a_call():
+    # LM Studio and Kimi: a new id on each argument fragment, no name.
+    assert await streamed_calls(
+        tool_delta(id="a", name="search", arguments='{"q": '),
+        tool_delta(id="b", arguments='"x", "n": '),
+        tool_delta(id="c", arguments="2}"),
+    ) == [("c", "search", '{"q": "x", "n": 2}')]
+
+
+async def test_name_resent_on_every_fragment_does_not_split_a_call():
+    # Some MiniMax routes resend the same name (and a fresh id) with each fragment.
+    assert await streamed_calls(
+        tool_delta(id="a", name="search", arguments='{"q": "a}b'),
+        tool_delta(id="b", name="search", arguments='", "n": [1, '),
+        tool_delta(id="c", name="search", arguments="2]}"),
+    ) == [("c", "search", '{"q": "a}b", "n": [1, 2]}')]

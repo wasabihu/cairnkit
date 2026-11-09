@@ -1,3 +1,5 @@
+# Adapted from hermes-agent v0.23.0 (2bd378e): agent/chat_completion_helpers_tool_calls.py
+# (streamed tool-call assembly). Copyright (c) 2025 Nous Research. MIT License.
 """Client for any OpenAI-compatible ``/chat/completions`` endpoint."""
 
 from __future__ import annotations
@@ -70,7 +72,7 @@ class OpenAICompatModel:
     async def _stream(self, body: dict[str, Any], on_delta: DeltaHandler) -> ModelResponse:
         body = {**body, "stream": True, "stream_options": {"include_usage": True}}
         content: list[str] = []
-        calls: dict[int, dict[str, Any]] = {}
+        calls = _ToolCallAccumulator()
         final: dict[str, Any] = {"model": self.name, "finish_reason": None, "usage": {}}
         async with (
             httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client,
@@ -105,13 +107,7 @@ class OpenAICompatModel:
                         content.append(text)
                         await emit_delta(on_delta, text)
                     for raw in delta.get("tool_calls") or []:
-                        slot = calls.setdefault(
-                            raw.get("index", 0), {"id": "", "name": "", "args": []}
-                        )
-                        slot["id"] = raw.get("id") or slot["id"]
-                        function = raw.get("function") or {}
-                        slot["name"] = function.get("name") or slot["name"]
-                        slot["args"].append(function.get("arguments") or "")
+                        calls.feed(raw)
                     final["finish_reason"] = choice.get("finish_reason") or final["finish_reason"]
         message = {
             "content": "".join(content) or None,
@@ -120,7 +116,7 @@ class OpenAICompatModel:
                     "id": c["id"] or f"call_{i}",
                     "function": {"name": c["name"], "arguments": "".join(c["args"])},
                 }
-                for i, c in sorted(calls.items())
+                for i, c in sorted(calls.slots.items())
             ],
         }
         return _parse(
@@ -131,6 +127,77 @@ class OpenAICompatModel:
             },
             self.name,
         )
+
+
+class _ToolCallAccumulator:
+    """Assemble streamed tool-call deltas into whole calls (slot -> id, name, argument parts).
+
+    Ollama-compatible endpoints reuse index 0 for every call of a parallel batch, told apart
+    only by id, so a new id at a seen index can open a new slot. LM Studio and Kimi send a fresh
+    id on every argument fragment without a name, and some MiniMax routes resend the same name
+    with each fragment: only a named delta opens a call, and one with the current call's name
+    only after that call's arguments have closed.
+    """
+
+    def __init__(self) -> None:
+        self.slots: dict[int, dict[str, Any]] = {}
+        self._slot_by_index: dict[int, int] = {}
+        self._last_id: dict[int, str] = {}
+        # slot -> (fragments scanned, depth, in_string, escaped, started)
+        self._scan: dict[int, tuple[int, int, bool, bool, bool]] = {}
+
+    def feed(self, raw: dict[str, Any]) -> None:
+        index = raw.get("index")
+        index = index if isinstance(index, int) else 0
+        call_id = str(raw.get("id") or "")
+        function = raw.get("function") or {}
+        slot = self._slot_by_index.setdefault(index, index)
+        last = self._last_id.get(index)
+        if (
+            call_id
+            and last is not None
+            and call_id != last
+            and self._starts_new_call(function, slot)
+        ):
+            slot = self._slot_by_index[index] = max(self.slots, default=-1) + 1
+        if call_id:
+            self._last_id[index] = call_id
+        entry = self.slots.setdefault(slot, {"id": "", "name": "", "args": []})
+        entry["id"] = call_id or entry["id"]
+        # Assignment, not +=: some providers resend the full name with every chunk.
+        entry["name"] = function.get("name") or entry["name"]
+        if function.get("arguments"):
+            entry["args"].append(function["arguments"])
+
+    def _starts_new_call(self, function: dict[str, Any], slot: int) -> bool:
+        name = function.get("name")
+        if not name:
+            return False
+        if name != self.slots.get(slot, {}).get("name"):
+            return True
+        return self._arguments_closed(slot)
+
+    def _arguments_closed(self, slot: int) -> bool:
+        """Brackets balanced outside strings (not strict JSON, so a repairable call still ends
+        its slot). Scans only fragments added since the last check."""
+        parts = self.slots.get(slot, {}).get("args", [])
+        done, depth, in_string, escaped, started = self._scan.get(slot, (0, 0, False, False, False))
+        for ch in "".join(parts[done:]):
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+            elif ch == '"':
+                in_string = True
+            elif ch in "{[":
+                depth, started = depth + 1, True
+            elif ch in "}]":
+                depth -= 1
+        self._scan[slot] = (len(parts), depth, in_string, escaped, started)
+        return started and depth == 0 and not in_string
 
 
 def openrouter(

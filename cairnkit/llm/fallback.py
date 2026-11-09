@@ -1,5 +1,6 @@
-# Adapted from hermes-agent v0.22.2 (d923a5e): agent/fallback_cooldown.py and the
-# fallback walk in agent/chat_completion_helpers.py. Copyright (c) 2025 Nous Research. MIT License.
+# Adapted from hermes-agent v0.23.0 (2bd378e): agent/fallback_cooldown.py, the fallback walk
+# in agent/chat_completion_helpers.py and agent/timeout_error_summary.py.
+# Copyright (c) 2025 Nous Research. MIT License.
 """Try a chain of models; retry transient errors, fall back on model-level failures."""
 
 from __future__ import annotations
@@ -19,9 +20,16 @@ logger = logging.getLogger(__name__)
 Sleep = Callable[[float], Awaitable[None]]
 
 
+def _label(err: ClassifiedError) -> str:
+    """The failure class, plus which phase timed out (Hermes v0.23.0 timeout_error_summary)."""
+    if err.context.get("timeout_phase"):
+        return f"{err.reason.value} ({err.message})"
+    return err.reason.value
+
+
 class AllModelsFailed(Exception):
     def __init__(self, errors: list[tuple[str, ClassifiedError]]):
-        summary = "; ".join(f"{name}: {err.reason.value}" for name, err in errors)
+        summary = "; ".join(f"{name}: {_label(err)}" for name, err in errors)
         super().__init__(f"every model failed ({summary})")
         self.errors = errors
 
