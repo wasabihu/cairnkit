@@ -325,3 +325,109 @@ async def test_agent_reports_what_compaction_used():
     )
     assert result.compressed and result.usage.calls == 1
     assert result.compression_usage.calls == 1
+
+
+# --- Hermes v0.23.0 ---------------------------------------------------------------------------
+
+
+async def test_summary_prompt_keeps_uncertain_claims_labelled():
+    model = ScriptedModel([say(SUMMARY)])
+    await compressor(model).compress(convo(8), CompressionState())
+    prompt = model.requests[0]["messages"][0]["content"]
+    assert "## Unverified / Working Hypotheses" in prompt
+    assert '"UNVERIFIED: <claim> — <basis>"' in prompt
+    assert "Never restate an uncertain claim" in prompt
+
+
+async def test_custom_sections_still_get_the_unverified_label():
+    model = ScriptedModel([say(SUMMARY)])
+    c = compressor(model, summary_sections="## Goal\n[What the user wants]")
+    await c.compress(convo(8), CompressionState())
+    prompt = model.requests[0]["messages"][0]["content"]
+    assert "## Unverified / Working Hypotheses" not in prompt
+    assert '"UNVERIFIED: <claim> — <basis>"' in prompt
+
+
+def test_lean_tail_never_exceeds_half_the_trigger():
+    # A 12K trigger on a 1M window used to keep a 25K tail, so a pass could never get under it.
+    small_trigger = ContextCompressor(
+        context_window=1_000_000, config=CompressionConfig(threshold_tokens=12_000)
+    )
+    assert small_trigger.tail_token_budget == 6_000
+    # Ordinary windows keep the 2.5% / 10K-25K policy.
+    assert ContextCompressor(context_window=200_000).tail_token_budget == 10_000
+    assert ContextCompressor(context_window=1_000_000).tail_token_budget == 25_000
+    # At or below the 2K summary floor no tail fits under the trigger anyway: keep the window term.
+    tiny_trigger = ContextCompressor(
+        context_window=1_000_000, config=CompressionConfig(threshold_tokens=1_500)
+    )
+    assert tiny_trigger.tail_token_budget == 25_000
+
+
+async def test_compaction_gets_under_a_small_absolute_trigger():
+    model = ScriptedModel([say(SUMMARY)])
+    c = ContextCompressor(
+        context_window=1_000_000,
+        summary_model=model,
+        config=CompressionConfig(threshold_tokens=12_000),
+        today=lambda: date(2026, 10, 20),
+    )
+    messages = convo(100, tool_text=lambda i: f"result {i} " + "y" * 150)
+    assert c.estimate(messages) > c.trigger_tokens
+    result = await c.compress(messages, CompressionState())
+    assert result.summary is not None
+    assert result.tokens_after < c.trigger_tokens
+
+
+async def test_broken_summary_model_falls_back_to_the_main_model():
+    broken = Failing(ModelAPIError(404, "No endpoints found for summary-model"))
+    main = ScriptedModel([say(SUMMARY)], name="main")
+    c = ContextCompressor(
+        context_window=2000,
+        summary_model=broken,
+        fallback_model=main,
+        clock=Clock(),
+        today=lambda: date(2026, 10, 20),
+    )
+    state = CompressionState()
+    result = await c.compress(convo(8), state)
+    assert broken.calls == 1 and len(main.requests) == 1
+    assert result.summary.startswith("## Historical Task Snapshot") and not result.used_fallback
+    assert result.fallback_model_used and "404" in result.summary_model_error
+    assert result.model_calls == 2 and state.cooldown_until == 0
+
+
+async def test_access_error_on_the_summary_model_is_retried_on_the_main_model():
+    main = ScriptedModel([say(SUMMARY)], name="main")
+    c = ContextCompressor(
+        context_window=2000,
+        summary_model=Failing(ModelAPIError(401, "bad key")),
+        fallback_model=main,
+        clock=Clock(),
+    )
+    result = await c.compress(convo(8), CompressionState())
+    assert not result.aborted and result.fallback_model_used and result.summary
+
+
+async def test_when_both_models_fail_the_main_models_error_decides():
+    clock = Clock()
+    main = Failing(httpx.ReadTimeout("slow"))
+    c = ContextCompressor(
+        context_window=2000,
+        summary_model=Failing(ModelAPIError(401, "bad key")),
+        fallback_model=main,
+        clock=clock,
+    )
+    state = CompressionState()
+    result = await c.compress(convo(8), state)
+    assert main.calls == 1 and result.used_fallback and not result.aborted
+    assert not result.fallback_model_used and state.cooldown_until == clock.now + 60
+
+
+async def test_same_model_is_not_retried_as_its_own_fallback():
+    model = Failing(RuntimeError("boom"))
+    c = ContextCompressor(
+        context_window=2000, summary_model=model, fallback_model=model, clock=Clock()
+    )
+    result = await c.compress(convo(8), CompressionState())
+    assert model.calls == 1 and result.used_fallback and result.summary_model_error is None
