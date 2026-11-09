@@ -1,4 +1,4 @@
-# Adapted from hermes-agent v0.22.2 (d923a5e): tools/session_search_tool.py
+# Adapted from hermes-agent v0.23.0 (2bd378e): tools/session_search_tool.py
 # Copyright (c) 2025 Nous Research. MIT License. Generalised to any host-provided record store.
 """History recall as one tool with four shapes, picked by the arguments.
 
@@ -69,9 +69,11 @@ def make_search_tool(
     roles: set[str] | None = None,
 ) -> ToolSpec:
     def handler(args: dict[str, Any], ctx: ToolContext) -> str:
-        limit = max(1, min(int(args.get("limit") or 3), MAX_LIMIT))
         query = str(args.get("query") or "").strip()
         doc_id = str(args.get("doc_id") or "").strip()
+        # Browsing lists enough recent documents to pick from; a search returns a few ranked hits.
+        default = 3 if query or doc_id else MAX_LIMIT
+        limit = max(1, min(int(args.get("limit") or default), MAX_LIMIT))
         around_id = str(args.get("around_id") or "").strip()
         if doc_id and around_id:
             items = backend.around(doc_id, around_id, ctx, window=int(args.get("window") or 3))
@@ -111,7 +113,15 @@ def make_search_tool(
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Keywords to search for."},
-                "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT, "default": 3},
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_LIMIT,
+                    "description": (
+                        f"Max documents. A search defaults to 3, browsing (no arguments) to "
+                        f"{MAX_LIMIT}."
+                    ),
+                },
                 "doc_id": {"type": "string", "description": "A doc_id from an earlier result."},
                 "around_id": {"type": "string", "description": "An item_id to scroll around."},
                 "window": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3},

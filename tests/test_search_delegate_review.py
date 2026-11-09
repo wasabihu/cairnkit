@@ -133,3 +133,47 @@ async def test_delegation_reports_each_child_run():
     )
     await tool.handler({"agent": "researcher", "goal": "g"}, ToolContext(scope={}))
     assert runs == [("researcher", 1)]
+
+
+# --- Hermes v0.23.0 ---------------------------------------------------------------------------
+
+
+class CountingBackend(Backend):
+    def __init__(self):
+        self.limits = {}
+
+    def search(self, query, ctx, limit):
+        self.limits["search"] = limit
+        return []
+
+    def browse(self, ctx, limit):
+        self.limits["browse"] = limit
+        return []
+
+
+def test_browsing_lists_more_documents_than_a_search_returns():
+    backend = CountingBackend()
+    tool = make_search_tool(backend)
+    run(tool, {})
+    run(tool, {"query": "tea"})
+    assert backend.limits == {"browse": 10, "search": 3}
+    run(tool, {"limit": 4})
+    assert backend.limits["browse"] == 4
+    assert "default" not in tool.parameters["properties"]["limit"]
+    assert "browsing" in tool.parameters["properties"]["limit"]["description"]
+
+
+async def test_review_saves_only_grounded_facts():
+    from cairnkit.review import REVIEW_INSTRUCTION
+
+    assert "GROUNDED in this conversation" in REVIEW_INSTRUCTION
+    assert "never turn a one-off request into a standing preference" in REVIEW_INSTRUCTION
+    reviewer_model = ScriptedModel([say("Nothing to save.")])
+    reviewer = _agent("reviewer", reviewer_model)
+    transcript = [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": "Book me a table for tonight."},
+        {"role": "assistant", "content": "Booked."},
+    ]
+    await review_conversation(reviewer, transcript, ToolContext())
+    assert "GROUNDED" in reviewer_model.requests[0]["messages"][-1]["content"]

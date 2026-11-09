@@ -1,4 +1,4 @@
-# Adapted from hermes-agent v0.22.2 (d923a5e): agent/background_review.py
+# Adapted from hermes-agent v0.23.0 (2bd378e): agent/background_review.py
 # Copyright (c) 2025 Nous Research. MIT License.
 """Background review: after a turn, a forked agent asks "should anything be remembered?".
 
@@ -21,9 +21,17 @@ if TYPE_CHECKING:
 
 REVIEW_INSTRUCTION = (
     "Background review of the conversation above. You are not talking to the user now. "
-    "Decide whether it contains durable facts worth saving to memory: facts the user stated, "
-    "not guesses. If so, make all changes in one call to your memory tool, patching or "
-    "removing entries that the conversation shows are outdated. If nothing is worth saving, "
+    "Decide whether it contains durable facts worth saving to memory. "
+    # Hermes v0.23.0: without a grounding rule the reviewer saved trait guesses and one-off
+    # requests as standing facts.
+    "Save only facts GROUNDED in this conversation: a user message or tool result you can "
+    "point to. Never infer the user's traits, skill level, role, mood or preferences from "
+    "topic, tone or tools used, and never turn a one-off request into a standing preference "
+    "unless the user marked it general ('always', 'from now on', 'remember') or stated a "
+    "standing like or dislike ('I hate X', 'stop doing Y'). If unsure, leave it out: a wrong "
+    "fact misleads every later conversation. "
+    "If something is worth saving, make all changes in one call to your memory tool, patching "
+    "or removing entries that the conversation shows are outdated. If nothing is worth saving, "
     "answer exactly: Nothing to save."
 )
 
