@@ -2,6 +2,12 @@
 
 Versioning rules: see [README](README.md#versioning).
 
+## Unreleased
+
+- New example `examples/verify_citations.py`: a read tool that checks a draft's DOIs and PMIDs
+  with [claimcite](https://github.com/wasabihu/claimcite) before a person reviews it.
+- Releases are published to PyPI from a tag (`.github/workflows/release.yml`).
+
 ## v0.4.1 (2026-10-22)
 
 - `documents`: text and Markdown files saved as Simplified Chinese by older Windows tools

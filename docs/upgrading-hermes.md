@@ -60,5 +60,7 @@ Security changes (the injection rules in `tools/threat_patterns.py`) are taken b
 1. Update `version` in `pyproject.toml`, [CHANGELOG.md](../CHANGELOG.md), the version and
    commit in [reference/README.md](../reference/README.md) and in [NOTICE.md](../NOTICE.md).
 2. Commit, tag and push: `git tag -a vX.Y.Z -m "..." && git push origin main --tags`.
+   The tag runs `.github/workflows/release.yml`: tests, a check that the tag matches
+   `pyproject.toml`, then PyPI and the GitHub release (notes taken from the CHANGELOG section).
 
 Versioning rules: see the [README](../README.md#versioning).
