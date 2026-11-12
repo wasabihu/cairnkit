@@ -28,7 +28,9 @@ uv run python examples/approval.py
 - **让修改可审核。** 工具声明访问级别（`read` / `propose` / `write`）和可用岗位。提议工具的处理函数创建草稿，审批和最终保存由你的应用实现；仅声明访问级别不会自动强制人工审核。
 - **有护栏的记忆。** 按原文定位的增 / 改 / 删、容量上限、注入扫描、会话内固定快照，移植自 Hermes Agent。
 - **压缩长对话。** 移植 Hermes 的上下文压缩：增量结构化摘要、真实 token 锚点、失败冷却、保留用户原话。
-- **小。** 核心只依赖标准库和 `httpx`；不带 Web 框架、数据库或向量库，存储和权限留在你的应用里。
+- **小。** 核心只依赖标准库和 `httpx`；不带 Web 框架、数据库或向量库，存储和权限留在你的应用里。可选的 `knowledge` 模块提供基于 SQLite（标准库）的文档检索，需要时再加本地向量检索；数据库文件仍然归你的应用。
+
+**知识库（可选）。** `cairnkit.knowledge` 把文档按标题切块存进 SQLite，支持英文和中文关键词检索（中文用 trigram 分词，两个字的词也能搜），装上 `cairnkit[vectors]` 后可加本地向量检索（数据不出服务器），按文档集合和标签限定可见范围，并附带检索效果评测。设计和扩展路径（SQLite → 向量 → Postgres）见 [docs/knowledge-design.md](docs/knowledge-design.md)，示例见 [examples/knowledge.py](examples/knowledge.py)。
 
 模块清单、接入步骤和示例见 [英文 README](README.md)，代码示例两种语言通用。
 
@@ -42,6 +44,8 @@ pip install cairnkit
 uv add cairnkit
 # 需要读取 PDF / Word / Excel 时：
 pip install "cairnkit[documents]"   # 或：uv add "cairnkit[documents]"
+# 知识库需要向量检索时（加 sqlite-vec 和 fastembed）：
+pip install "cairnkit[vectors]"
 ```
 
 需要 Python 3.12 或更新版本。

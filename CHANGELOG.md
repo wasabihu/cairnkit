@@ -2,6 +2,34 @@
 
 Versioning rules: see [README](README.md#versioning).
 
+## v0.6.0 (2026-11-12)
+
+New optional module **`cairnkit.knowledge`**: documents an agent can search and quote.
+Design and growth path: [docs/knowledge-design.md](docs/knowledge-design.md).
+
+- `SQLiteStore`: documents, chunks and indexes in SQLite (standard library only). Give it a
+  path or your own `sqlite3.Connection`; tables share a prefix (`kn_`), so they can live in
+  the application's database. Your connection's `row_factory` is left alone.
+- Chunking by Markdown headings, then paragraphs and sentences; the heading path is indexed
+  and returned, so answers can cite "Travel policy > Meals".
+- Keyword search per collection language: English (`porter`; words of 5+ letters also match
+  as a prefix) and Chinese / Japanese / Korean (`trigram`; two-character words via LIKE,
+  near phrases via any-trigram fallback). All words first, then any word.
+- Optional vectors (`pip install "cairnkit[vectors]"`): `FastEmbed` runs a small
+  multilingual model on the CPU; vectors are plain float32 blobs, scored by sqlite-vec when
+  installed or in Python otherwise. `KnowledgeBase` fuses keyword and vector hits with RRF
+  (`rrf()`); vector hits below `min_similarity` (default 0.4) are dropped so absent topics
+  find nothing. `reindex()` embeds what was added before the embedder.
+- `KnowledgeSearchBackend` plugs into `make_search_tool`: scope (collections + metadata
+  filters) and an optional `allowed` check come from the host per run, and apply to search,
+  read, context and browse. `timeline=True` for dated entries (notes, logs): the newest
+  keyword match wins, vector-only hits never displace it.
+- `cairnkit.knowledge.evaluate`: run your own cases through the real search tool and get
+  found / seen / full per kind of question; assert floors in your tests.
+- `ChunkHit.via` says which search found a hit.
+
+Nothing changes for existing code; the core still imports nothing new.
+
 ## v0.5.1 (2026-11-12)
 
 - `make_search_tool`: `discover` now expands the best hit around the item that matched

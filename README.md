@@ -52,7 +52,9 @@ proposed change becomes a saved record. cairnkit provides building blocks for th
 - **Compact long conversations.** A port of Hermes Agent's context compression:
   incremental structured summaries, real token anchors, cooldowns and verbatim user quotes.
 - **Small.** The core depends only on the standard library and `httpx`. No web framework,
-  no database, no vector store: storage and permissions stay in your application.
+  no database, no vector store: storage and permissions stay in your application. The
+  optional `knowledge` module adds document search on SQLite (standard library) and,
+  if you want it, local vector search; the database file is still yours.
 
 ## What is inside
 
@@ -75,6 +77,7 @@ proposed change becomes a saved record. cairnkit provides building blocks for th
 | Cost                 | `pricing.py`                 | Uses the provider's reported cost, otherwise a price table                                                     |
 | Agent definitions    | `agents.py`                  | One folder per agent: `agent.toml` + `SOUL.md`                                                                 |
 | Documents (optional) | `documents.py`               | PDF, Word, Excel and text to Markdown, with size and zip-bomb limits                                           |
+| Knowledge (optional) | `knowledge/`                 | Searchable documents in SQLite: chunks by heading, English and Chinese keyword search, optional local vectors, scope filters, retrieval evaluation ([design](docs/knowledge-design.md)) |
 
 ## Install
 
@@ -84,6 +87,8 @@ pip install cairnkit
 uv add cairnkit
 # with document reading (adds pypdf and openpyxl):
 pip install "cairnkit[documents]"   # or: uv add "cairnkit[documents]"
+# with vector search for the knowledge module (adds sqlite-vec and fastembed):
+pip install "cairnkit[vectors]"
 ```
 
 Python 3.12 or newer.
@@ -136,6 +141,7 @@ Runnable examples, no API key needed:
 | [examples/minimal.py](examples/minimal.py)             | The smallest complete agent with one tool                  |
 | [examples/approval.py](examples/approval.py)           | Read a ticket, propose a change, approve or reject in the host |
 | [examples/read_document.py](examples/read_document.py) | Reading a PDF, Word or Excel file into Markdown            |
+| [examples/knowledge.py](examples/knowledge.py)         | Search a fictional English and Chinese handbook and print the retrieval report (`--vectors` adds local embeddings) |
 | [examples/verify_citations.py](examples/verify_citations.py) | A read tool that checks a draft's DOIs and PMIDs with [claimcite](https://github.com/wasabihu/claimcite) before review (needs network: `uv run --with claimcite python examples/verify_citations.py`) |
 
 ## Rules worth keeping
