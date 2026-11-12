@@ -3,6 +3,7 @@
 """History recall as one tool with four shapes, picked by the arguments.
 
 * ``query``                 -> discover: top matching documents, the best one expanded
+                               (around the matching item when the hit names one)
 * ``doc_id`` + ``around_id`` -> scroll: a window of items around an anchor
 * ``doc_id``                -> read: one document's items (most recent first)
 * no arguments              -> browse: most recently active documents
@@ -61,6 +62,29 @@ def _items(items: list[SearchItem]) -> list[dict[str, Any]]:
     return out
 
 
+DISCOVER_WINDOW = 5
+"""Items shown on each side of the matching item when discover expands the best hit."""
+
+
+def _expand(backend: SearchBackend, hits: list[SearchHit], ctx: ToolContext):
+    """The best hit's document, centred on the item that matched.
+
+    Reading only a document's most recent items can leave out the very item the search found,
+    when it is older than those; then the model sees no more than its snippet. A hit that names
+    its item is expanded around it; one that does not (or whose item is gone) falls back to the
+    document's most recent items."""
+    if not hits:
+        return None
+    best = hits[0]
+    items = None
+    if best.item_id:
+        items = backend.around(best.doc_id, best.item_id, ctx, window=DISCOVER_WINDOW)
+    if items is not None:
+        return {"doc_id": best.doc_id, "around_id": best.item_id, "items": _items(items)}
+    items = backend.read(best.doc_id, ctx, limit=20)
+    return None if items is None else {"doc_id": best.doc_id, "items": _items(items)}
+
+
 def make_search_tool(
     backend: SearchBackend,
     *,
@@ -87,13 +111,8 @@ def make_search_tool(
             return tool_result(mode="read", doc_id=doc_id, items=_items(items))
         if query:
             hits = backend.search(query, ctx, limit)
-            expanded = backend.read(hits[0].doc_id, ctx, limit=20) if hits else None
             return tool_result(
-                mode="discover",
-                hits=[asdict(h) for h in hits],
-                top=None
-                if expanded is None
-                else {"doc_id": hits[0].doc_id, "items": _items(expanded)},
+                mode="discover", hits=[asdict(h) for h in hits], top=_expand(backend, hits, ctx)
             )
         return tool_result(mode="browse", hits=[asdict(h) for h in backend.browse(ctx, limit)])
 

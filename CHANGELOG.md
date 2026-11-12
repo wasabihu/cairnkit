@@ -2,6 +2,14 @@
 
 Versioning rules: see [README](README.md#versioning).
 
+## v0.5.1 (2026-11-12)
+
+- `make_search_tool`: `discover` now expands the best hit around the item that matched
+  (`SearchHit.item_id`, five items on each side, via `SearchBackend.around`) instead of the
+  document's 20 most recent items. Before, a match older than those was visible only as its
+  snippet. The expansion says which item it is centred on (`top.around_id`). Hits without an
+  `item_id`, or whose item `around` cannot find, are expanded as before.
+
 ## v0.5.0 (2026-11-09)
 
 Follows Hermes Agent v0.23.0 (`2bd378e`). What was taken, skipped or left for later, and why:

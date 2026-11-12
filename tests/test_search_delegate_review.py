@@ -51,6 +51,44 @@ def test_search_shapes_and_injection_flag():
     assert run(tool, {"query": "yoga"})["top"] is None
 
 
+class LongBackend:
+    """One document with 40 items, newest first; the match is old."""
+
+    items = [SearchItem(f"n{i}", f"note {i}") for i in range(40)]
+
+    def __init__(self, item_id="n35"):
+        self.item_id = item_id
+        self.windows = []
+
+    def search(self, query, ctx, limit):
+        return [SearchHit("m1", "Member One", "note 35", item_id=self.item_id)]
+
+    def read(self, doc_id, ctx, limit):
+        return self.items[:limit]
+
+    def around(self, doc_id, item_id, ctx, window):
+        self.windows.append(window)
+        index = next((i for i, it in enumerate(self.items) if it.item_id == item_id), None)
+        return None if index is None else self.items[max(0, index - window) : index + window + 1]
+
+    def browse(self, ctx, limit):
+        return []
+
+
+def test_discover_expands_around_the_matching_item():
+    backend = LongBackend()
+    found = run(make_search_tool(backend), {"query": "35"})
+    ids = [item["item_id"] for item in found["top"]["items"]]
+    assert "n35" in ids and "n0" not in ids
+    assert found["top"]["around_id"] == "n35" and backend.windows == [5]
+
+
+def test_discover_falls_back_to_recent_items_without_a_usable_anchor():
+    for item_id in ("", "gone"):
+        found = run(make_search_tool(LongBackend(item_id)), {"query": "35"})
+        assert len(found["top"]["items"]) == 20 and "around_id" not in found["top"]
+
+
 def _agent(name, model, tools=None, tool_names=()):
     spec = AgentSpec(
         name=name, description=f"{name} agent", persona=f"You are {name}.", tools=list(tool_names)
