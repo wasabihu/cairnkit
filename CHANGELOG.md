@@ -2,6 +2,27 @@
 
 Versioning rules: see [README](README.md#versioning).
 
+## v0.6.1 (2026-11-13)
+
+- **Fix silent streaming success on truncated responses.** `OpenAICompatModel` now requires
+  a non-empty string `finish_reason` for choice 0 and a complete SSE `[DONE]` event before
+  returning a `ModelResponse`. EOF, `[DONE]` alone, missing `[DONE]`, malformed JSON or
+  chunk structure, provider errors, and output or conflicting reasons after the terminal
+  frame raise `ModelAPIError` (502 for invalid/incomplete responses). Streams cannot hand
+  unfinished tool calls to the agent loop. Transport errors and cancellation still propagate.
+- SSE parsing assembles multi-line `data:` events, ignores comments and other SSE fields,
+  and rejects events cut off before their blank-line separator. Streaming selects choice 0
+  instead of combining alternatives, matching the single-completion return type.
+- Normal `stop`, `length`, `tool_calls`, `content_filter` and other non-error string reasons
+  pass through for the host to interpret. Empty content is still allowed with valid terminal
+  markers. Both OpenAI's empty-choices usage frame and OpenRouter's content-free usage frame
+  repeating the same finish reason are supported.
+- Compatibility: custom endpoints must send both terminal markers. Previously accepted
+  malformed or incomplete streams now raise. Already emitted `on_delta` text is provisional;
+  callers must handle failure before treating a turn as complete. The client does not retry;
+  `FallbackModel` retains its existing policy before output and never retries/falls back once
+  text has been emitted. No continuation or replacement answer is added.
+
 ## v0.6.0 (2026-11-12)
 
 New optional module **`cairnkit.knowledge`**: documents an agent can search and quote.

@@ -108,6 +108,12 @@ configuration and permissions.**
 - **Hermes files:** `agent/error_classifier.py`, `agent/fallback_cooldown.py`, `agent/turn_api_error.py`
 - **Kept:** errors classified by priority (auth, billing, rate limit, upstream rate limit, overload, server error, timeout, context overflow, unknown model, provider policy, content filter, bad request…), each with a hint: retry, switch to a fallback model, compress, or stop; cooldowns after rate limits.
 - **Changed:** only the classes OpenAI-compatible APIs and OpenRouter produce; no credential pools. Timeouts say whether the connect or the read phase failed.
+- **Changed (v0.6.1 stream fix):** `llm/openai_compat.py` validates complete SSE events,
+  choice 0's terminal `finish_reason`, and `[DONE]`. Malformed or truncated streams raise
+  instead of returning a partial success; there is no synthetic answer or continuation.
+  Provider finish reasons such as `length` remain available to the host. OpenRouter's
+  content-free usage frame can repeat the terminal reason. This is client-side validation,
+  independent of Hermes' streamed tool-call accumulator, which stays unchanged.
 
 ### 9. Usage and cost
 

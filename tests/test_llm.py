@@ -225,7 +225,9 @@ def tool_delta(index=0, id=None, name=None, arguments=None) -> dict:
 
 
 async def streamed_calls(*chunks: dict) -> list[tuple[str, str, str]]:
-    model = openrouter("m", api_key="k", transport=sse(list(chunks)))
+    # These are successful provider traces, including the terminal tool-call frame.
+    terminal = {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}
+    model = openrouter("m", api_key="k", transport=sse([*chunks, terminal]))
     response = await model.complete([{"role": "user", "content": "hi"}], on_delta=lambda _: None)
     return [(c.id, c.name, c.arguments) for c in response.tool_calls]
 

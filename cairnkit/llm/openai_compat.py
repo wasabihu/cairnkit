@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -74,6 +75,7 @@ class OpenAICompatModel:
         content: list[str] = []
         calls = _ToolCallAccumulator()
         final: dict[str, Any] = {"model": self.name, "finish_reason": None, "usage": {}}
+        done = False
         async with (
             httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client,
             client.stream("POST", self._url, json=body, headers=self._headers) as response,
@@ -84,31 +86,63 @@ class OpenAICompatModel:
                 raise ModelAPIError(
                     response.status_code, _error_message(payload, response), payload
                 )
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue  # SSE comments (": OPENROUTER PROCESSING") and blank lines
-                data = line[5:].strip()
-                if data == "[DONE]":
+            async for data in _sse_data(response):
+                if data.strip() == "[DONE]":
+                    done = True
                     break
                 try:
                     chunk = json.loads(data)
-                except ValueError:
-                    continue
-                if isinstance(chunk.get("error"), dict):
+                except ValueError as exc:
+                    raise ModelAPIError(502, "malformed JSON in completion stream") from exc
+                if not isinstance(chunk, dict):
+                    raise ModelAPIError(502, "malformed completion stream payload")
+                if chunk.get("error"):
                     error = chunk["error"]
-                    code = error.get("code") if isinstance(error.get("code"), int) else 502
-                    raise ModelAPIError(code, str(error.get("message", "stream error")), chunk)
+                    code = error.get("code") if isinstance(error, dict) else None
+                    message = (
+                        error.get("message", "stream error") if isinstance(error, dict) else error
+                    )
+                    raise ModelAPIError(code if isinstance(code, int) else 502, str(message), chunk)
                 final["model"] = chunk.get("model") or final["model"]
                 if chunk.get("usage"):
                     final["usage"] = chunk["usage"]
-                for choice in chunk.get("choices") or []:
-                    delta = choice.get("delta") or {}
-                    if text := delta.get("content"):
+                choices = chunk.get("choices", [])
+                if not isinstance(choices, list):
+                    raise ModelAPIError(502, "malformed stream choices")
+                for choice in choices:
+                    if not isinstance(choice, dict):
+                        raise ModelAPIError(502, "malformed stream choice")
+                    # Like non-streaming _parse, return one completion, never combine choices.
+                    if choice.get("index", 0) != 0:
+                        continue
+                    delta = choice.get("delta")
+                    delta = {} if delta is None else delta
+                    if not isinstance(delta, dict):
+                        raise ModelAPIError(502, "malformed stream delta")
+                    text = delta.get("content")
+                    if text is not None and not isinstance(text, str):
+                        raise ModelAPIError(502, "malformed stream content")
+                    reason = choice.get("finish_reason")
+                    if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+                        raise ModelAPIError(502, "malformed stream finish_reason")
+                    if reason == "error":
+                        raise ModelAPIError(502, "provider reported a stream error", chunk)
+                    tool_calls = delta.get("tool_calls") or []
+                    # OpenRouter's usage frame repeats the reason with a content-free delta.
+                    if final["finish_reason"] is not None and (
+                        text or tool_calls or reason not in (None, final["finish_reason"])
+                    ):
+                        raise ModelAPIError(502, "completion stream changed after finish_reason")
+                    if text:
                         content.append(text)
                         await emit_delta(on_delta, text)
-                    for raw in delta.get("tool_calls") or []:
+                    for raw in tool_calls:
                         calls.feed(raw)
-                    final["finish_reason"] = choice.get("finish_reason") or final["finish_reason"]
+                    final["finish_reason"] = reason or final["finish_reason"]
+            if not done or final["finish_reason"] is None:
+                raise ModelAPIError(
+                    502, "incomplete completion stream: expected finish_reason and [DONE]"
+                )
         message = {
             "content": "".join(content) or None,
             "tool_calls": [
@@ -127,6 +161,21 @@ class OpenAICompatModel:
             },
             self.name,
         )
+
+
+async def _sse_data(response: httpx.Response) -> AsyncIterator[str]:
+    """Yield complete SSE data events; EOF never completes a pending event."""
+    parts: list[str] = []
+    async for line in response.aiter_lines():
+        if not line:
+            if parts:
+                yield "\n".join(parts)
+                parts.clear()
+        elif line == "data" or line.startswith("data:"):
+            # SSE removes at most one leading space. Comments and other fields are ignored.
+            parts.append(line[5:].removeprefix(" "))
+    if parts:
+        raise ModelAPIError(502, "incomplete completion stream event")
 
 
 class _ToolCallAccumulator:

@@ -46,7 +46,10 @@ class ClassifiedError:
 
 
 class ModelAPIError(Exception):
-    """Non-2xx answer from a model endpoint. ``body`` is the parsed JSON when available."""
+    """Endpoint error or invalid completion (502), including incomplete streams.
+
+    ``body`` is the parsed JSON when available, not necessarily the HTTP response body.
+    """
 
     def __init__(self, status_code: int, message: str, body: Any = None):
         super().__init__(f"HTTP {status_code}: {message}")
