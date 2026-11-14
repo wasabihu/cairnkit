@@ -34,9 +34,13 @@ class MemoryItem:
 
 
 def render_snapshot(
-    items: list[MemoryItem], *, title: str = "Memory", max_chars: int = DEFAULT_SNAPSHOT_CHARS
+    items: list[MemoryItem],
+    *,
+    title: str = "Memory",
+    max_chars: int = DEFAULT_SNAPSHOT_CHARS,
+    max_items: int | None = None,
 ) -> tuple[str, list[str]]:
-    """Render items in priority order until the budget is used.
+    """Render fitting items in priority order, skipping oversized or duplicate IDs.
 
     Returns the text and the ids that made it in, so callers can verify citations.
     Items flagged by the context-scope threat scan are left out rather than injected.
@@ -45,17 +49,22 @@ def render_snapshot(
     included: list[str] = []
     used = len(title) + 2
     for item in items:
+        if max_items is not None and len(included) >= max_items:
+            break
+        if item.id in included:
+            continue
         if scan_for_threats(item.text, scope="context"):
             continue
         label = f"[{item.label}] " if item.label else ""
         line = f"- ({item.id}) {label}{item.text}"
         if used + len(line) + 1 > max_chars:
-            break
+            continue
         lines.append(line)
         included.append(item.id)
         used += len(line) + 1
     if not lines:
-        return f"{title}:\n- (nothing recorded)", []
+        empty = f"{title}:\n- (nothing recorded)"
+        return empty if len(empty) <= max_chars else "", []
     return f"{title}:\n" + "\n".join(lines), included
 
 

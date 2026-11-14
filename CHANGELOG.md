@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.7.0 (2026-11-14)
+
+- Add pure `memory_archive.project_archive`: source-ordered working details plus
+  host-rendered summaries, exact key partition, configurable working budgets and
+  rank thresholds. Canonical archive storage, semantics and lifecycle remain with
+  the host; no writes, eviction, model calls or prompt assembly.
+
+- Add bounded memory consolidation proposals with host validation and atomic plans.
+- No storage writes or provider-error retries; hosts must check snapshot freshness.
+- Add optional host-rendered selection proposals: immutable IDs after applying pending edits,
+  protected new/changed entries, merge groups and compact inclusive removal ranges.
+- Reject truncated proposals, keep rejected output out of retry context, report remaining
+  headroom and return only final persistence changes (no temporary add-then-delete rows).
+- Recover from failed all-singleton proposals with a pre-sized removal option for model
+  review. Candidate removals follow host entry order, exclude pending changes and require
+  explicit selection and host validation.
+- Reject explicit deletion proposals below 95% of the configured target; recover using
+  the same model-reviewed bounded option. Lossless host grouping/prepasses are exempt.
+  Expose `validate_removal_size` for hosts detecting semantic loss inside text patches.
+  Never offer a recovery option that almost empties memory due to a large indivisible row.
+- Add an optional host-owned lossless prepass on overflow; a validated result under the
+  hard limit returns with zero model requests, even when above the soft target.
+- Snapshot packing skips oversized items and duplicate IDs, supports an optional item
+  count after packing, and respects even budgets too small for the empty placeholder.
+
 Versioning rules: see [README](README.md#versioning).
 
 ## v0.6.1 (2026-11-13)
@@ -154,3 +179,11 @@ First version as a standalone package, based on Hermes Agent v0.22.2 (`d923a5e`)
 - Models: OpenAI-compatible client, OpenRouter, error classification, fallback chain,
   offline scripted model; cost estimates; automatic titles
 - `scripts/hermes_changes.py` and the Hermes upgrade guide
+
+- Unreleased local development: configurable ordinal fact layers, stable original
+  provenance ordering, host-owned reversible grouping and protected selection IDs.
+  Unknown provenance remains detailed/protected. No release or real-model check.
+
+- Local unreleased fix: host-proven infeasibility skips consolidation requests;
+  bounded selection deltas and short approval/decline after truncation prevent
+  repeated oversized enumeration. Existing semantic, protection and removal-floor checks remain.

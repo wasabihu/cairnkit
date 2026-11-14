@@ -27,5 +27,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+Memory consolidation additionally follows Hermes v0.23.1, commit
+`3b421578588243f920886e6fe79a6faa87ea026e`, under the same MIT license.
+
 Files that contain ported or adapted code say so in their header, naming the
 Hermes source file.

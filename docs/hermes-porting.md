@@ -215,3 +215,67 @@ Decisions follow [upgrading-hermes.md](upgrading-hermes.md#4-decide-change-by-ch
 
 Modules whose Hermes sources changed but whose port did not (`delegate.py`, `skills.py`, `curator.py`,
 `prompt.py`, `loop.py`) keep their v0.22.2 header: they were checked against v0.23.0 and nothing was taken.
+
+### 2026-11-14: bounded consolidation, v0.23.1
+
+`memory_consolidation.py` adapts `tools/memory_tool_store.py` at
+`3b421578588243f920886e6fe79a6faa87ea026e`: overflow feedback contains existing
+entries and a capacity error, proposals apply atomically, and an initial failed
+write gets at most three further consolidation proposals. The model may merge,
+shorten or remove entries. Differences: JSON proposals instead of an agent tool
+loop; no file storage; host callback validates grounding and permissions; caller
+must compare the original snapshot before committing. Provider errors do not
+retry. This is a selective port, not a claim that every module follows v0.23.1.
+
+Local consolidation extension: separate soft target and hard limit; no full inventory
+repeated in retry feedback; bounded best-valid fallback and an empty-result guard.
+Optional original-entry indices make batch removals compact. No fixed target ratio
+is attributed to Hermes. Fact evidence and schema migrations remain host-owned.
+
+
+### Selection protocol in v0.7.0
+
+The host-rendered ID/group/range protocol in `memory_selection.py` is a cairnkit extension,
+not copied Hermes behavior. It reduces model text rewriting and unbounded index enumeration.
+Selection IDs include pending corrections but are not persisted until host approval and atomic
+commit. Original snapshot validation, source grounding and business permissions stay with the
+host. Truncated output is rejected; failed proposal text is excluded from retry context.
+If an all-singleton proposal fails or deletes too much, cairnkit can calculate a removal option in host
+entry order, skipping pending changes, for explicit model selection and host validation.
+The local helper also rejects explicit removals below 95% of the soft target, rounded
+to whole characters. This is a cairnkit protection, not a claim about Hermes behavior.
+Host-rendered lossless groups are exempt; hosts detect semantic loss in free-text patches.
+Recovery skips oversized indivisible rows rather than offering a nearly empty result.
+
+The optional lossless prepass and snapshot packing improvements are also local cairnkit
+extensions, not claims about Hermes behavior. Hosts provide reversible normalization;
+the generic helper supplies validation, bounded plans and the no-model fast path when
+the hard limit is met. Snapshot packing can skip oversized facts and limit the number
+actually selected. Domain fact parsing, relevance, provenance and storage remain outside
+the package. Released in v0.7.0.
+
+## Local extension: ordinal memory layers
+
+`memory_layers.py` is an original host-configurable extension, not a verbatim
+Hermes port. It groups by original fact order and host topic, not elapsed days,
+while preserving the host's protected facts. Hosts own storage, semantics and
+capacity/target defaults. Selection protection supplements (never replaces) host
+semantic validation. No Hermes answer-control prompts are copied.
+
+### Local infeasibility and truncation fix
+
+Unlike an open-ended tool retry loop, hosts may prove the pending snapshot cannot
+fit and skip model calls. Selection output has structural limits and truncation
+uses a short, validated option vote or stops. These are original extensions;
+no Hermes hidden prompts or answer recovery behavior are copied. Correction-first
+persistence, ownership and audit remain host responsibilities.
+
+### Local working-set/archive projection
+
+`memory_archive.py` is an original, optional pure projection, not copied from Hermes.
+It leaves canonical facts in host storage and partitions keys into recent/protected
+working details and older host-rendered summaries. Only the working representation
+has the supplied character cap; this is explicitly different from capping all stored
+memory. Original source order survives rebuilding. Hosts must validate summaries,
+scope retrieval and invalidate views on lifecycle changes. No eviction, model calls,
+extra answer instructions or filesystem persistence are introduced by this module.
