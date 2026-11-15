@@ -1,6 +1,6 @@
 # cairnkit 首发素材包
 
-GitHub 首发已完成：main 已包含完整演示和素材，v0.4.1 Release 已公开发布。X、V2EX 与 Show HN 文案仍为草稿，尚未在对应平台发布。
+GitHub 与 PyPI 均已发布至 `v0.7.0`（`pip install cairnkit`），`main` 已同步完整记忆设计文档、Web ASGI+SSE 示例与零调用记忆示例。X、V2EX 与 Show HN 文案已更新至 `v0.7.0` 口径，仍为待发草稿。
 
 ## 这次讲什么
 
@@ -16,9 +16,12 @@ GitHub 首发已完成：main 已包含完整演示和素材，v0.4.1 Release �
 | README 动图 | [GIF](../assets/approval-demo.gif) | 已接入中英文 README |
 | 静态预览 | [PNG](../assets/approval-poster.png) | 展示“草稿存在但原记录未改” |
 | 中文字幕 | [SRT](demo.zh-CN.srt) | 与 MP4 同步，方便中文讲解 |
-| 可运行示例 | [approval.py](../../examples/approval.py) | 终端输入 approve / reject |
+| 终端审批示例 | [approval.py](../../examples/approval.py) | 终端输入 approve / reject |
+| Web 审批示例 | [web_approval.py](../../examples/web_approval.py) | 标准库 ASGI + SQLite + SSE + 403/409 乐观锁 |
+| 零调用记忆示例 | [zero_call_memory.py](../../examples/zero_call_memory.py) | 写入筛选、序数分层、归档投影与真超限合并 |
+| 引用核查联动 | [verify_citations.py](../../examples/verify_citations.py) | 交人审前调用 claimcite 检查引用（需联网） |
 | 分步回放 | [index.html](../../examples/approval-demo/index.html) | 本地打开或用静态服务器查看 |
-| Release 正文 | [v0.4.1](release-v0.4.1.md) | 发布在已有 v0.4.1 标签上 |
+| 历史 Release（v0.4.1） | [v0.4.1](release-v0.4.1.md) | 早期版本归档；最新版本见 [CHANGELOG](../../CHANGELOG.md) |
 | X 英文 | [两条串帖](x-en.md) | 第一条配视频，第二条说明来源和边界 |
 | X 中文 | [两条串帖](x-zh.md) | 中文受众版本，避免同一天重复刷屏 |
 | V2EX | [标题和正文](v2ex-zh.md) | 分享创造节点；发前查看节点当前规则 |
@@ -27,7 +30,7 @@ GitHub 首发已完成：main 已包含完整演示和素材，v0.4.1 Release �
 ## 建议顺序
 
 1. 确认本包；将示例、测试、README 和素材提交并推送到 main。
-2. 为已有 v0.4.1 标签创建 GitHub Release。不要移动旧标签。新演示是 main 上的文档更新，Release 已明确区分。
+2. 当前 `v0.7.0` 已在 GitHub Releases 与 PyPI 发布；发帖前无需再声明“未上 PyPI”。
 3. 发一组 X 首帖和一篇 V2EX，观察安装和示例的真实反馈。
 4. 解决首批问题后再做 Show HN。优先记录成功跑通、具体反馈和 Issue；Star 仅作辅助指标。
 
@@ -89,3 +92,8 @@ python3 scripts/render_approval_video.py --frames .run/launch-capture
 - 已回读 Release：`isDraft=false`，标签为 v0.4.1，正文与 `release-v0.4.1.md` 一致。
 - 四个附件均已回下载，文件大小和 SHA-256 与本地成品一致：MP4 846,112 字节、GIF 502,626 字节、PNG 89,918 字节、SRT 633 字节。
 - 本次仅发布到 GitHub，未向 X、V2EX 或 Hacker News 发帖。
+
+## 2026-11-15（v0.7.0 同步）
+
+- 文案（`show-hn-en.md`、`v2ex-zh.md`、`x-en.md`、`x-zh.md`）已更新为 `v0.7.0` PyPI 可用口径，Hermes Agent 来源同步至 v0.23.0（MIT，Nous Research，非官方隶属）。
+- 补充标准库 `examples/web_approval.py`（ASGI + SQLite + SSE + 403/409 乐观锁）、`examples/zero_call_memory.py` 与 `docs/memory-design.md` 说明。

@@ -1,21 +1,19 @@
-# X launch draft — English
+# X launch draft — English (v0.7.0)
 
 Status: draft, not posted. Attach `docs/assets/cairnkit-approval-demo.mp4` to post 1.
 The two blocks below are separate posts; the attribution stays in the same thread.
 
 ## Post 1
 
-I open-sourced cairnkit, a small Python agent runtime for business apps.
+If you're adding an AI agent to a real business app, the model shouldn't decide who the user is or directly mutate production rows.
 
-This offline demo reads a support ticket → proposes an edit → waits for review → the host saves it.
+I open-sourced cairnkit (v0.7.0, MIT, on PyPI): host injects `ToolContext`, tools declare `read`/`propose`/`write`, and writes wait for human review + version checks.
 
-Identity and approval stay in your app. MIT.
+35s offline demo:
 https://github.com/wasabihu/cairnkit
 
 ## Post 2
 
-Many mechanisms are ported from Hermes Agent (MIT, Nous Research), with attribution in the repo.
+Core depends only on stdlib + httpx (no bundled web framework or DB). Offline `ScriptedModel` demos include stdlib ASGI+SQLite+SSE approval with 403/409 locks (`examples/web_approval.py`) and 0-call memory screening + archival projection (`examples/zero_call_memory.py`).
 
-The demo uses ScriptedModel and fictional data, not a live LLM. It shows the host’s approval flow.
-
-Where would you put human review in your app?
+Many loop/compression/memory mechanisms are ported from Hermes Agent v0.23.0 (MIT, Nous Research; porting map inside, not affiliated). `pip install cairnkit`
