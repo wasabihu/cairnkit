@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add [docs/memory-design.md](docs/memory-design.md) documenting the hybrid zero-call
+  memory extraction / overflow consolidation architecture and moving detailed consolidation,
+  ordinal-layer, infeasible-capacity, and archive-projection contracts out of `README.md`.
+- Add offline runnable examples [examples/zero_call_memory.py](examples/zero_call_memory.py)
+  and [examples/web_approval.py](examples/web_approval.py), and run both in CI.
+- Expand [README.md](README.md) with a framework comparison table and update
+  [README.zh-CN.md](README.zh-CN.md) to full EN/ZH structural parity.
+- Update package status classifier to `4 - Beta` and verify `cairnkit/py.typed` in tests.
+
 ## v0.7.0 (2026-11-14)
 
 - Add pure `memory_archive.project_archive`: source-ordered working details plus

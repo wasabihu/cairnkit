@@ -25,3 +25,5 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run python examples/minimal.py
       - run: uv run python examples/approval.py
+      - run: uv run python examples/zero_call_memory.py
+      - run: uv run python examples/web_approval.py

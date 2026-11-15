@@ -1,3 +1,6 @@
+from pathlib import Path
+
+import cairnkit
 from cairnkit import (
     MemoryItem,
     ScriptedModel,
@@ -45,3 +48,7 @@ async def test_generate_title_reports_usage_even_when_rejected():
     bad = '{"title": "' + "word " * 20 + '"}'
     await generate_title(ScriptedModel([say(bad)]), "x", on_usage=seen.append)
     assert [u.calls for u in seen] == [1]
+
+
+def test_py_typed_marker_exists():
+    assert Path(cairnkit.__file__).with_name("py.typed").is_file()
