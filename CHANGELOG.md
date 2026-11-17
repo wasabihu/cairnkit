@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fix runtime correctness, concurrency isolation, connection pooling, and security scan gaps:
+  preserve guardrail `halt` across parallel tool batches (synthesising skipped tool responses),
+  deduplicate leading `system` messages in `history`, enforce `make_delegate_tool(max_per_turn=...)`
+  on default/immutable `ToolContext` per turn, reuse an event-loop-scoped `httpx.AsyncClient` in
+  `OpenAICompatModel` (adding `aclose()`, `async with`, and optional `http_client`), isolate
+  `FallbackModel` cooldowns per model instance, remove shared mutable `ContextCompressor` fallback
+  state and in-place `CompressionConfig` mutation (plus `input_image` accounting/stripping), and
+  harden `persona` checks to `scope="strict"` with overlapping 64 KB threat-scan windows.
 - Add [docs/memory-design.md](docs/memory-design.md) documenting the hybrid zero-call
   memory extraction / overflow consolidation architecture and moving detailed consolidation,
   ordinal-layer, infeasible-capacity, and archive-projection contracts out of `README.md`.

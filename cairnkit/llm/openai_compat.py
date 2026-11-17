@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
@@ -28,6 +29,7 @@ class OpenAICompatModel:
         headers: dict[str, str] | None = None,
         timeout: float = 60.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         if not api_key:
             raise ValueError("api_key is required")
@@ -37,6 +39,35 @@ class OpenAICompatModel:
         self._extra_body = extra_body or {}
         self._timeout = timeout
         self._transport = transport
+        self._external_client = http_client
+        self._owned_client: httpx.AsyncClient | None = None
+        self._client_loop: asyncio.AbstractEventLoop | None = None
+
+    def _client(self) -> httpx.AsyncClient:
+        if self._external_client is not None:
+            return self._external_client
+        loop = asyncio.get_running_loop()
+        if (
+            self._owned_client is None
+            or self._owned_client.is_closed
+            or self._client_loop is not loop
+        ):
+            self._owned_client = httpx.AsyncClient(timeout=self._timeout, transport=self._transport)
+            self._client_loop = loop
+        return self._owned_client
+
+    async def aclose(self) -> None:
+        """Close the internally managed HTTP client, if one was created."""
+        if self._owned_client is not None and not self._owned_client.is_closed:
+            await self._owned_client.aclose()
+        self._owned_client = None
+        self._client_loop = None
+
+    async def __aenter__(self) -> OpenAICompatModel:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.aclose()
 
     async def complete(
         self,
@@ -56,8 +87,7 @@ class OpenAICompatModel:
             body["max_tokens"] = max_tokens
         if on_delta is not None:
             return await self._stream(body, on_delta)
-        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
-            response = await client.post(self._url, json=body, headers=self._headers)
+        response = await self._client().post(self._url, json=body, headers=self._headers)
         payload = _json(response)
         if response.status_code >= 400:
             raise ModelAPIError(response.status_code, _error_message(payload, response), payload)
@@ -76,10 +106,9 @@ class OpenAICompatModel:
         calls = _ToolCallAccumulator()
         final: dict[str, Any] = {"model": self.name, "finish_reason": None, "usage": {}}
         done = False
-        async with (
-            httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client,
-            client.stream("POST", self._url, json=body, headers=self._headers) as response,
-        ):
+        async with self._client().stream(
+            "POST", self._url, json=body, headers=self._headers
+        ) as response:
             if response.status_code >= 400:
                 await response.aread()
                 payload = _json(response)
@@ -259,6 +288,7 @@ def openrouter(
     app_name: str | None = None,
     timeout: float = 60.0,
     transport: httpx.AsyncBaseTransport | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> OpenAICompatModel:
     """OpenRouter with privacy-first routing: providers that store/train on data are excluded."""
     provider: dict[str, Any] = {}
@@ -277,6 +307,7 @@ def openrouter(
         headers=headers,
         timeout=timeout,
         transport=transport,
+        http_client=http_client,
     )
 
 

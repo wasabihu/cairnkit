@@ -215,3 +215,31 @@ async def test_review_saves_only_grounded_facts():
     ]
     await review_conversation(reviewer, transcript, ToolContext())
     assert "GROUNDED" in reviewer_model.requests[0]["messages"][-1]["content"]
+
+
+async def test_delegation_turn_cap_enforced_with_default_tool_context_and_resets_next_turn():
+    from types import MappingProxyType
+
+    child = _agent("researcher", ScriptedModel(responder=lambda m, t: say("ok")))
+    tools = ToolRegistry()
+    tools.register(make_delegate_tool({"researcher": child}, max_per_turn=2))
+    parent_model = ScriptedModel(
+        [
+            call("delegate_task", {"agent": "researcher", "goal": "g1"}, "d1"),
+            call("delegate_task", {"agent": "researcher", "goal": "g2"}, "d2"),
+            call("delegate_task", {"agent": "researcher", "goal": "g3"}, "d3"),
+            say("done turn 1"),
+            call("delegate_task", {"agent": "researcher", "goal": "g4"}, "d4"),
+            say("done turn 2"),
+        ]
+    )
+    parent = _agent("concierge", parent_model, tools, ["delegate_task"])
+    ctx = ToolContext(scope=MappingProxyType({"tenant": "t1"}))
+    r1 = await parent.run("turn 1", ctx)
+    assert r1.tool_records[0].failed is False
+    assert r1.tool_records[1].failed is False
+    assert r1.tool_records[2].failed is True
+    assert "limit 2" in r1.tool_records[2].result
+    # Reusing the same immutable ToolContext on a new turn gets a fresh per-turn budget.
+    r2 = await parent.run("turn 2", ctx)
+    assert r2.tool_records[0].failed is False

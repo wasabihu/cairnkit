@@ -177,6 +177,9 @@ def _compile() -> dict[str, list[tuple[re.Pattern, str]]]:
 _COMPILED = _compile()
 
 
+_SCAN_WINDOW_OVERLAP = 4_096
+
+
 def scan_for_threats(content: str, scope: str = "context") -> list[str]:
     """Matched pattern IDs in ``content`` for ``scope``; invisible codepoints are
     reported as ``"invisible_unicode_U+XXXX"``. Raises ValueError on an unknown scope."""
@@ -184,15 +187,20 @@ def scan_for_threats(content: str, scope: str = "context") -> list[str]:
         return []
     if (patterns := _COMPILED.get(scope)) is None:
         raise ValueError(f"scan_for_threats: unknown scope {scope!r}")
-    content = content[:MAX_SCAN_CHARS]
     # Invisible unicode is checked on the RAW content: NFKC below can strip these codepoints.
     findings: list[str] = [
-        f"invisible_unicode_U+{ord(ch):04X}" for ch in set(content) & INVISIBLE_CHARS
+        f"invisible_unicode_U+{ord(ch):04X}" for ch in sorted(set(content) & INVISIBLE_CHARS)
     ]
+    seen_pids: set[str] = set()
+    step = MAX_SCAN_CHARS - _SCAN_WINDOW_OVERLAP
     # NFKC folds full-width / compatibility variants (ｃａｔ → cat) against homograph bypass.
-    # It does NOT fold cross-script confusables (Cyrillic ``а``) — that needs a TR#39 database.
-    normalised = unicodedata.normalize("NFKC", content)
-    findings.extend(pid for compiled, pid in patterns if compiled.search(normalised))
+    # Sliding bounded windows prevent >64KB padding bypass while keeping regex work O(N).
+    for start in range(0, len(content), step):
+        normalised = unicodedata.normalize("NFKC", content[start : start + MAX_SCAN_CHARS])
+        for compiled, pid in patterns:
+            if pid not in seen_pids and compiled.search(normalised):
+                seen_pids.add(pid)
+                findings.append(pid)
     return findings
 
 

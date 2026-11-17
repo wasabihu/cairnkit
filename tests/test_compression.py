@@ -431,3 +431,24 @@ async def test_same_model_is_not_retried_as_its_own_fallback():
     )
     result = await c.compress(convo(8), CompressionState())
     assert model.calls == 1 and result.used_fallback and result.summary_model_error is None
+
+
+async def test_stateless_compress_does_not_leak_across_calls_or_mutate_caller_config():
+    cfg = CompressionConfig(threshold=0.5)
+    model = ScriptedModel([say(SUMMARY), say("## Historical Task Snapshot\nNone\n\n## Goal\nTwo")])
+    c = ContextCompressor(context_window=2000, threshold=0.4, summary_model=model, config=cfg)
+    assert cfg.threshold == 0.5 and c.config.threshold == 0.4
+    await c.compress(convo(8))
+    await c.compress(convo(8))
+    # Without an explicit CompressionState, the second call must not inherit session 1's summary.
+    second_prompt = model.requests[1]["messages"][0]["content"]
+    assert "PREVIOUS SUMMARY" not in second_prompt
+
+
+def test_input_image_parts_are_counted_and_stripped_like_other_images():
+    from cairnkit.compression import _strip_images, estimate_message_tokens
+
+    msg = {"role": "user", "content": [{"type": "input_image", "image_url": "data:..."}]}
+    assert estimate_message_tokens(msg) >= 1_500
+    stripped = _strip_images(msg["content"])
+    assert stripped[0]["type"] == "text"

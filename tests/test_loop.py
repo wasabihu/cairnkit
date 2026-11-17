@@ -187,3 +187,42 @@ def test_ordinary_identical_failures_still_warn_and_block():
     assert guard.after_call("search", {"q": "x"}, error, True).action == "warn"
     guard.after_call("search", {"q": "x"}, error, True)
     assert guard.before_call("search", {"q": "x"}).action == "block"
+
+
+async def test_guardrail_halt_is_not_overwritten_by_later_parallel_tool_call():
+    from cairnkit import ModelResponse, ToolCall
+
+    events: list = []
+    batch = ModelResponse(
+        content=None,
+        tool_calls=[
+            ToolCall("c1", "echo", '{"text": "boom"}'),
+            ToolCall("c2", "echo", '{"text": "after-halt"}'),
+        ],
+    )
+    model = ScriptedModel([batch, say("stopped safely")])
+    agent = Agent(
+        spec(max_iterations=5, guardrails=GuardrailConfig(same_tool_failure_halt_after=1)),
+        model=model,
+        tools=registry(events),
+    )
+    result = await agent.run("go", ToolContext())
+    assert result.stop_reason == "guardrail"
+    assert result.text == "stopped safely"
+    # Second tool call in the batch was skipped rather than executed, and paired in messages.
+    assert events == [("handler", "boom")]
+    assert len(result.tool_records) == 2
+    assert "skipped" in result.tool_records[1].result
+    tool_ids = [m["tool_call_id"] for m in result.messages if m.get("role") == "tool"]
+    assert tool_ids == ["c1", "c2"]
+
+
+async def test_passing_full_messages_as_history_does_not_duplicate_system_prompt():
+    model = ScriptedModel([say("first"), say("second")])
+    agent = Agent(spec(), model=model, tools=registry())
+    first = await agent.run("turn 1", ToolContext(), volatile=["Time: 9:00"])
+    second = await agent.run("turn 2", ToolContext(), history=first.messages)
+    sent = model.requests[1]["messages"]
+    assert [m["role"] for m in sent].count("system") == 1
+    assert sent[0]["content"] == first.system_prompt
+    assert second.system_prompt == first.system_prompt

@@ -62,7 +62,7 @@ class FallbackModel:
         self._cooldown = cooldown_seconds
         self._sleep = sleep
         self._clock = clock
-        self._cooling_until: dict[str, float] = {}
+        self._cooling_until: dict[int, float] = {}
 
     async def complete(self, messages: list[Message], **kwargs: Any) -> ModelResponse:
         """Streamed text cannot be taken back, so once a delta went out, errors are raised."""
@@ -78,7 +78,7 @@ class FallbackModel:
         if user_delta is not None:
             kwargs["on_delta"] = on_delta
         now = self._clock()
-        candidates = [m for m in self.models if self._cooling_until.get(m.name, 0) <= now]
+        candidates = [m for m in self.models if self._cooling_until.get(id(m), 0) <= now]
         for model in candidates or self.models:
             for attempt in range(self._retries + 1):
                 try:
@@ -92,7 +92,7 @@ class FallbackModel:
                         FailoverReason.rate_limit,
                         FailoverReason.upstream_rate_limit,
                     ):
-                        self._cooling_until[model.name] = self._clock() + self._cooldown
+                        self._cooling_until[id(model)] = self._clock() + self._cooldown
                     if not verdict.retryable and not verdict.should_fallback:
                         raise
                     if (

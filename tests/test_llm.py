@@ -263,3 +263,31 @@ async def test_name_resent_on_every_fragment_does_not_split_a_call():
         tool_delta(id="b", name="search", arguments='", "n": [1, '),
         tool_delta(id="c", name="search", arguments="2]}"),
     ) == [("c", "search", '{"q": "a}b", "n": [1, 2]}')]
+
+
+async def test_openai_compat_reuses_client_and_closes_cleanly():
+    payload = {
+        "model": "m",
+        "choices": [{"finish_reason": "stop", "message": {"content": "ok"}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    async with openrouter("m", api_key="k", transport=transport(200, payload)) as model:
+        await model.complete([{"role": "user", "content": "1"}])
+        first_client = model._owned_client
+        await model.complete([{"role": "user", "content": "2"}])
+        assert model._owned_client is first_client and not first_client.is_closed
+    assert first_client.is_closed
+
+
+async def test_fallback_cooldown_is_isolated_per_model_instance():
+    first = Failing("same-model-name", ModelAPIError(429, "Rate limit"))
+    second = ScriptedModel([say("from-second-key")], name="same-model-name")
+    now = [0.0]
+    chain = FallbackModel(
+        [first, second], sleep=_no_sleep, clock=lambda: now[0], cooldown_seconds=60
+    )
+    assert (await chain.complete([])).content == "from-second-key"
+    # Second call still routes to ``second`` despite sharing ``name`` with ``first``.
+    second._responses.append(say("still-up"))
+    assert (await chain.complete([])).content == "still-up"
+    assert first.calls == 1

@@ -42,7 +42,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import date
 from typing import Any, Literal
 
@@ -159,6 +159,9 @@ def estimate_text_tokens(text: str) -> int:
     return cjk + (len(text) - cjk + 3) // 4
 
 
+_IMAGE_TYPES = ("image_url", "image", "input_image")
+
+
 def _content_text(content: Any) -> str:
     if content is None:
         return ""
@@ -169,11 +172,7 @@ def _content_text(content: Any) -> str:
         for part in content:
             if isinstance(part, dict) and part.get("type") == "text":
                 parts.append(str(part.get("text") or ""))
-            elif isinstance(part, dict) and part.get("type") in (
-                "image_url",
-                "image",
-                "input_image",
-            ):
+            elif isinstance(part, dict) and part.get("type") in _IMAGE_TYPES:
                 parts.append(IMAGE_PLACEHOLDER)
         return "\n".join(parts)
     return str(content)
@@ -184,7 +183,7 @@ def estimate_message_tokens(message: Message) -> int:
     content = message.get("content")
     if isinstance(content, list):
         tokens += 1_500 * sum(
-            1 for p in content if isinstance(p, dict) and p.get("type") in ("image_url", "image")
+            1 for p in content if isinstance(p, dict) and p.get("type") in _IMAGE_TYPES
         )
     if message.get("tool_calls"):
         tokens += estimate_text_tokens(json.dumps(message["tool_calls"], ensure_ascii=False))
@@ -289,7 +288,11 @@ class ContextCompressor:
         clock: Callable[[], float] = time.time,
         today: Callable[[], date] = date.today,
     ):
-        self.config = config or CompressionConfig()
+        self.config = (
+            replace(config, anchor_patterns=list(config.anchor_patterns))
+            if config is not None
+            else CompressionConfig()
+        )
         if threshold is not None:
             self.config.threshold = threshold
         if protect_last_turns is not None:  # older keyword: whole turns kept at the end
@@ -305,7 +308,6 @@ class ContextCompressor:
         self.tool_summarizers = tool_summarizers or {}
         self._clock = clock
         self._today = today
-        self._state = CompressionState()  # used when a caller passes no state
 
     # ---- thresholds
 
@@ -354,8 +356,7 @@ class ContextCompressor:
             state.anchor_messages = messages
 
     def estimate(self, messages: list[Message], state: CompressionState | None = None) -> int:
-        state = state or self._state
-        if state.anchor_tokens and 0 < state.anchor_messages <= len(messages):
+        if state is not None and state.anchor_tokens and 0 < state.anchor_messages <= len(messages):
             return state.anchor_tokens + estimate_tokens(messages[state.anchor_messages :])
         return estimate_tokens(messages)
 
@@ -364,16 +365,16 @@ class ContextCompressor:
     def should_compress(
         self, messages: list[Message], state: CompressionState | None = None, *, force: bool = False
     ) -> tuple[bool, str | None]:
-        state = state or self._state
+        active_state = CompressionState() if state is None else state
         if not self.config.enabled and not force:
             return False, "disabled"
         if not self._has_content_to_compress(messages):
             return False, "nothing to compress"
         if force:
             return True, None
-        if self._clock() < state.cooldown_until:
+        if self._clock() < active_state.cooldown_until:
             return False, "cooling down after a failed or ineffective compaction"
-        if self.estimate(messages, state) < self.trigger_tokens:
+        if self.estimate(messages, active_state) < self.trigger_tokens:
             return False, "below threshold"
         return True, None
 
@@ -397,7 +398,7 @@ class ContextCompressor:
         force: bool = False,
         focus: str | None = None,
     ) -> CompressionResult:
-        state = state or self._state
+        state = CompressionState() if state is None else state
         before = self.estimate(messages, state)
         result = CompressionResult([dict(m) for m in messages], tokens_before=before)
         go, why = self.should_compress(messages, state, force=force)
@@ -792,11 +793,11 @@ def _align_backward(messages: list[Message], idx: int) -> int:
 
 
 def _strip_images(content: list[Any]) -> list[Any]:
-    if not any(isinstance(p, dict) and p.get("type") in ("image_url", "image") for p in content):
+    if not any(isinstance(p, dict) and p.get("type") in _IMAGE_TYPES for p in content):
         return content
     return [
         {"type": "text", "text": IMAGE_PLACEHOLDER}
-        if isinstance(p, dict) and p.get("type") in ("image_url", "image")
+        if isinstance(p, dict) and p.get("type") in _IMAGE_TYPES
         else p
         for p in content
     ]

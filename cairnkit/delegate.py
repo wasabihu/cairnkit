@@ -11,6 +11,8 @@ delegate further, and each parent turn may delegate a bounded number of times.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from cairnkit.tools import ToolContext, ToolError, ToolSpec, tool_result
@@ -23,6 +25,30 @@ ChildRunHook = Callable[["Agent", "RunResult", ToolContext], None]
 
 DEPTH_KEY = "_delegation_depth"
 COUNT_KEY = "_delegations"
+
+_TURN_DELEGATIONS: ContextVar[list[str] | None] = ContextVar("_turn_delegations", default=None)
+
+
+@contextmanager
+def turn_delegation_scope():
+    """Bind a fresh per-turn delegation counter for the duration of one ``Agent.run`` call."""
+    token = _TURN_DELEGATIONS.set([])
+    try:
+        yield
+    finally:
+        _TURN_DELEGATIONS.reset(token)
+
+
+def _resolve_counter(ctx: ToolContext) -> list[str] | None:
+    scoped = ctx.scope.get(COUNT_KEY)
+    if isinstance(scoped, list):
+        return scoped
+    active = _TURN_DELEGATIONS.get()
+    if active is not None:
+        return active
+    if isinstance(ctx.scope, dict):
+        return ctx.scope.setdefault(COUNT_KEY, [])
+    return None
 
 
 def make_delegate_tool(
@@ -37,30 +63,34 @@ def make_delegate_tool(
     ``RunResult.usage`` covers only the parent's own model calls)."""
     if not children:
         raise ValueError("at least one child agent is required")
+    if max_per_turn < 1:
+        raise ValueError("max_per_turn must be at least 1")
     catalog = "; ".join(f"'{n}': {a.spec.description}" for n, a in children.items())
 
     async def handler(args: dict[str, Any], ctx: ToolContext) -> str:
         if int(ctx.scope.get(DEPTH_KEY, 0)) >= 1:
             raise ToolError("delegated agents cannot delegate again; do the task yourself")
-        counter = ctx.scope.get(COUNT_KEY)
-        if isinstance(counter, list):
-            if len(counter) >= max_per_turn:
-                raise ToolError(
-                    f"this turn already delegated {len(counter)} times (limit "
-                    f"{max_per_turn}); finish with the results you have"
-                )
-            counter.append(args.get("agent"))
+        counter = _resolve_counter(ctx)
+        if counter is not None and len(counter) >= max_per_turn:
+            raise ToolError(
+                f"this turn already delegated {len(counter)} times (limit "
+                f"{max_per_turn}); finish with the results you have"
+            )
         child = children.get(str(args.get("agent", "")))
         if child is None:
             raise ToolError(f"agent must be one of {', '.join(children)}")
         goal = str(args.get("goal") or "").strip()
         if not goal:
             raise ToolError("goal is required: say exactly what the child should find or produce")
+        if counter is not None:
+            counter.append(child.spec.name)
         context = str(args.get("context") or "").strip()
+        child_scope = {k: v for k, v in ctx.scope.items() if k != COUNT_KEY}
+        child_scope[DEPTH_KEY] = 1
         child_ctx = ToolContext(
             principal=ctx.principal,
             roles=ctx.roles,
-            scope={**ctx.scope, DEPTH_KEY: 1, COUNT_KEY: []},
+            scope=child_scope,
         )
         message = f"Goal: {goal}" + (
             f"\n\nContext from the requester:\n{context}" if context else ""

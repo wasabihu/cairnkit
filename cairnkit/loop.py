@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 from cairnkit.agents import AgentSpec
 from cairnkit.compression import CompressionResult, CompressionState, ContextCompressor
+from cairnkit.delegate import turn_delegation_scope
 from cairnkit.guardrails import GuardrailController
 from cairnkit.llm.base import ChatModel
 from cairnkit.llm.errors import classify_error
@@ -135,10 +136,21 @@ class Agent:
         generated; tool calls still arrive whole. Pass the conversation's
         ``compression_state`` (and store ``result.compression_state`` afterwards) so
         compaction can anchor on real token counts and update its previous summary."""
-        system = system_prompt or self.system_prompt(context=context, volatile=volatile)
+        prior = [dict(m) for m in (history or [])]
+        history_system: str | None = None
+        while prior and prior[0].get("role") == "system":
+            raw_system = prior.pop(0).get("content")
+            if history_system is None and isinstance(raw_system, str) and raw_system:
+                history_system = raw_system
+        if system_prompt is not None:
+            system = system_prompt
+        elif history_system is not None and context is None and volatile is None:
+            system = history_system
+        else:
+            system = self.system_prompt(context=context, volatile=volatile)
         messages: list[Message] = [
             {"role": "system", "content": system},
-            *(history or []),
+            *prior,
             {"role": "user", "content": user_message},
         ]
         tools = self._registry.available(None, ctx)
@@ -151,32 +163,46 @@ class Agent:
         )
         run = _RunScope(on_event=on_event, stream=stream, state=state)
 
-        for _ in range(self.spec.max_iterations):
+        with turn_delegation_scope():
+            for _ in range(self.spec.max_iterations):
+                await self._maybe_compress(result, run)
+                messages = result.messages
+                response = await self._call(messages, schemas, result, run)
+                if not response.tool_calls:
+                    messages.append(response.to_message())
+                    result.text = response.content
+                    return result
+                messages.append(response.to_message())
+                halted = False
+                for call in response.tool_calls:
+                    if halted:
+                        skipped = tool_error(
+                            "skipped: turn halted by guardrail after an earlier tool call"
+                        )
+                        result.tool_records.append(ToolRecord(call.name, None, skipped, True))
+                        messages.append(
+                            {"role": "tool", "tool_call_id": call.id, "content": skipped}
+                        )
+                        continue
+                    content, call_halted = await self._run_tool(
+                        call, by_name, ctx, guard, result, on_event
+                    )
+                    messages.append({"role": "tool", "tool_call_id": call.id, "content": content})
+                    if call_halted:
+                        halted = True
+                if halted:
+                    result.stop_reason = "guardrail"
+                    break
+            else:
+                result.stop_reason = "max_iterations"
+
+            # Budget spent or loop stopped: one call without tools forces a plain answer.
             await self._maybe_compress(result, run)
             messages = result.messages
-            response = await self._call(messages, schemas, result, run)
-            if not response.tool_calls:
-                messages.append(response.to_message())
-                result.text = response.content
-                return result
-            messages.append(response.to_message())
-            halted = False
-            for call in response.tool_calls:
-                content, halted = await self._run_tool(call, by_name, ctx, guard, result, on_event)
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": content})
-            if halted:
-                result.stop_reason = "guardrail"
-                break
-        else:
-            result.stop_reason = "max_iterations"
-
-        # Budget spent or loop stopped: one call without tools forces a plain answer.
-        await self._maybe_compress(result, run)
-        messages = result.messages
-        final = await self._call(messages, None, result, run)
-        messages.append({"role": "assistant", "content": final.content})
-        result.text = final.content
-        return result
+            final = await self._call(messages, None, result, run)
+            messages.append({"role": "assistant", "content": final.content})
+            result.text = final.content
+            return result
 
     async def _maybe_compress(
         self, result: RunResult, run: _RunScope, *, force: bool = False

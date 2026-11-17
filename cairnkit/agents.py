@@ -60,7 +60,7 @@ def validate_persona(persona: str) -> str:
         raise AgentConfigError("the persona is empty")
     if len(persona) > MAX_PERSONA_CHARS:
         raise AgentConfigError(f"the persona may hold at most {MAX_PERSONA_CHARS} characters")
-    if threat := first_threat_message(persona, scope="all"):
+    if threat := first_threat_message(persona, scope="strict"):
         raise AgentConfigError(threat)
     return persona
 
@@ -82,7 +82,7 @@ def load_agent(directory: str | Path) -> AgentSpec:
     persona = soul.read_text(encoding="utf-8").strip() if soul.is_file() else ""
     if not persona:
         raise AgentConfigError(f"{directory}: SOUL.md is missing or empty")
-    if threat := first_threat_message(persona, scope="all"):
+    if threat := first_threat_message(persona, scope="strict"):
         raise AgentConfigError(f"{soul}: {threat}")
     max_iterations = int(data.get("max_iterations", 6))
     if not 1 <= max_iterations <= 50:
