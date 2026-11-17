@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
-from cairnkit.tools import ToolContext, ToolError, ToolSpec, tool_result
+from cairnkit.tools import Access, ToolContext, ToolError, ToolSpec, tool_result
 
 if TYPE_CHECKING:
     from cairnkit.loop import Agent, RunResult
@@ -25,6 +25,7 @@ ChildRunHook = Callable[["Agent", "RunResult", ToolContext], None]
 
 DEPTH_KEY = "_delegation_depth"
 COUNT_KEY = "_delegations"
+_ACCESS_RANK: dict[Access, int] = {"read": 0, "propose": 1, "write": 2}
 
 _TURN_DELEGATIONS: ContextVar[list[str] | None] = ContextVar("_turn_delegations", default=None)
 
@@ -56,6 +57,7 @@ def make_delegate_tool(
     *,
     name: str = "delegate_task",
     max_per_turn: int = 3,
+    access: Access | None = None,
     roles: set[str] | None = None,
     on_child_run: ChildRunHook | None = None,
 ) -> ToolSpec:
@@ -65,6 +67,22 @@ def make_delegate_tool(
         raise ValueError("at least one child agent is required")
     if max_per_turn < 1:
         raise ValueError("max_per_turn must be at least 1")
+    child_max: Access = max(
+        (spec.access for child in children.values() for spec in child._registry.specs()),
+        key=_ACCESS_RANK.__getitem__,
+        default="read",
+    )
+    if access is None:
+        effective_access: Access = child_max
+    else:
+        if access not in _ACCESS_RANK:
+            raise ValueError(f"access must be one of {sorted(_ACCESS_RANK)}")
+        if _ACCESS_RANK[access] < _ACCESS_RANK[child_max]:
+            raise ValueError(
+                f"delegate tool access {access!r} cannot be lower than child tool access "
+                f"{child_max!r}"
+            )
+        effective_access = access
     catalog = "; ".join(f"'{n}': {a.spec.description}" for n, a in children.items())
 
     async def handler(args: dict[str, Any], ctx: ToolContext) -> str:
@@ -111,7 +129,7 @@ def make_delegate_tool(
             "Give a focused task to a specialist agent and get back only its final answer. "
             f"Use it for self-contained lookups or drafting. Agents: {catalog}."
         ),
-        access="read",
+        access=effective_access,
         roles=frozenset(roles) if roles else None,
         handler=handler,
         parameters={

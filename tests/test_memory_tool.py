@@ -156,3 +156,113 @@ def test_a_lone_add_over_the_limit_says_how_much_to_free():
     assert "Memory at 50/60 chars; adding this entry (20 chars)" in info.value.message
     assert "would exceed the limit by 13 chars" in info.value.message
     assert info.value.extra["current_entries"] == ["a" * 50]
+
+
+class AsyncFakeStore:
+    def __init__(self, entries):
+        self.entries = {"member": list(entries)}
+        self.saved = []
+
+    async def load(self, target, ctx):
+        import asyncio
+
+        await asyncio.sleep(0)
+        return list(self.entries[target])
+
+    def limit(self, target):
+        return 500
+
+    async def save(self, target, plan, ctx):
+        import asyncio
+
+        from cairnkit import ToolError
+
+        await asyncio.sleep(0)
+        if any("FORBIDDEN" in (c.after or "") for c in plan.changes):
+            raise ToolError("host policy rejected entry")
+        self.entries[target] = list(plan.entries)
+        self.saved.append((target, plan.changes, ctx.principal["id"]))
+        return "Saved asynchronously."
+
+
+async def test_async_memory_store_direct_and_in_agent_loop():
+    import inspect
+
+    from cairnkit import Agent, AgentSpec, ScriptedModel, ToolRegistry
+    from tests.conftest import call, say
+
+    store = AsyncFakeStore(["Prefers early appointments."])
+    tool = make_memory_tool(store, {"member": "facts about the member"})
+    assert inspect.iscoroutinefunction(tool.handler)
+
+    # Direct await: no-op duplicate skips save()
+    dup = json.loads(
+        await tool.handler(
+            {"operations": [{"action": "add", "content": "Prefers early appointments."}]},
+            ToolContext(principal={"id": "u1"}),
+        )
+    )
+    assert dup["success"] and store.saved == []
+
+    # Direct await: host ToolError propagates cleanly through ToolRegistry.dispatch
+    tools = ToolRegistry()
+    tools.register(tool)
+    denied = await tools.dispatch(
+        tool,
+        {"operations": [{"action": "add", "content": "FORBIDDEN note"}]},
+        ToolContext(principal={"id": "u1"}),
+    )
+    assert denied.failed and "host policy rejected entry" in denied.result
+
+    # End-to-end Agent.run with async MemoryStore
+    model = ScriptedModel(
+        [
+            call(
+                "memory",
+                {
+                    "operations": [
+                        {"action": "patch", "old_text": "early", "content": "7am"},
+                        {"action": "add", "content": "Drinks green tea."},
+                    ]
+                },
+            ),
+            say("Updated memory."),
+        ]
+    )
+    agent = Agent(
+        AgentSpec(name="mem_agent", description="", persona="Help.", tools=["memory"]),
+        model=model,
+        tools=tools,
+    )
+    res = await agent.run("Update notes", ToolContext(principal={"id": "u42"}))
+    assert res.text == "Updated memory."
+    assert res.tool_records[0].failed is False
+    assert res.tool_records[0].access == "propose"
+    assert store.entries["member"] == ["Prefers 7am appointments.", "Drinks green tea."]
+    assert store.saved[0][2] == "u42"
+
+
+async def test_awaitable_returning_sync_def_memory_store():
+    import asyncio
+
+    class CallableAwaitableStore:
+        def load(self, target, ctx):
+            fut = asyncio.get_running_loop().create_future()
+            fut.set_result(["Existing fact."])
+            return fut
+
+        def limit(self, target):
+            return 500
+
+        def save(self, target, plan, ctx):
+            fut = asyncio.get_running_loop().create_future()
+            fut.set_result("Staged via future.")
+            return fut
+
+    tool = make_memory_tool(CallableAwaitableStore(), {"member": "facts"})
+    out = await tool.handler(
+        {"operations": [{"action": "add", "content": "Second fact."}]},
+        ToolContext(principal={"id": "u1"}),
+    )
+    payload = json.loads(out)
+    assert payload["success"] and payload["message"] == "Staged via future."

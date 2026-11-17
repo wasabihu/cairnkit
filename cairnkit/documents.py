@@ -175,12 +175,56 @@ def extract_text(data: bytes, filename: str = "", *, limits: Limits | None = Non
     return Document(text, kind, result.parts, truncated, tuple(warnings))
 
 
+_ZIP_CHUNK_BYTES = 65_536
+
+
 def _check_zip(data: bytes, limits: Limits) -> None:
-    infos = zipfile.ZipFile(io.BytesIO(data)).infolist()
-    if len(infos) > limits.max_zip_members or (
-        sum(i.file_size for i in infos) > limits.max_unzipped_bytes
-    ):
-        raise DocumentError("too_large", "The file expands to too much data to read safely.")
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos = archive.infolist()
+            if len(infos) > limits.max_zip_members or (
+                sum(i.file_size for i in infos) > limits.max_unzipped_bytes
+            ):
+                raise DocumentError(
+                    "too_large", "The file expands to too much data to read safely."
+                )
+            # Read in positive-sized chunks (never read(-1), which calls unbounded zlib.decompress
+            # even when ZipInfo.file_size is forged small) and enforce the cumulative byte cap.
+            total = 0
+            for info in infos:
+                if info.is_dir():
+                    continue
+                with archive.open(info) as member:
+                    while True:
+                        step = min(_ZIP_CHUNK_BYTES, limits.max_unzipped_bytes - total + 1)
+                        chunk = member.read(max(1, step))
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > limits.max_unzipped_bytes:
+                            raise DocumentError(
+                                "too_large", "The file expands to too much data to read safely."
+                            )
+    except DocumentError:
+        raise
+    except Exception as exc:
+        raise DocumentError("unreadable", "The file could not be read.") from exc
+
+
+def _read_zip_member(archive: zipfile.ZipFile, name: str, max_bytes: int) -> bytes:
+    out = bytearray()
+    with archive.open(name) as member:
+        while True:
+            step = min(_ZIP_CHUNK_BYTES, max_bytes - len(out) + 1)
+            chunk = member.read(max(1, step))
+            if not chunk:
+                break
+            out.extend(chunk)
+            if len(out) > max_bytes:
+                raise DocumentError(
+                    "too_large", "The file expands to too much data to read safely."
+                )
+    return bytes(out)
 
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -277,9 +321,10 @@ _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
 def _docx(data: bytes, limits: Limits) -> Extracted:
-    archive = zipfile.ZipFile(io.BytesIO(data))
-    body = ElementTree.fromstring(archive.read("word/document.xml")).find(f"{_W}body")
-    headings = _heading_levels(archive)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        doc_xml = _read_zip_member(archive, "word/document.xml", limits.max_unzipped_bytes)
+        body = ElementTree.fromstring(doc_xml).find(f"{_W}body")
+        headings = _heading_levels(archive, limits.max_unzipped_bytes)
     out: list[str] = []
     for block in [] if body is None else list(body):
         if block.tag == f"{_W}p":
@@ -293,13 +338,14 @@ def _docx(data: bytes, limits: Limits) -> Extracted:
     return Extracted("\n\n".join(out))
 
 
-def _heading_levels(archive: zipfile.ZipFile) -> dict[str, int]:
+def _heading_levels(archive: zipfile.ZipFile, max_bytes: int) -> dict[str, int]:
     """Style id -> heading level. Ids are localized ("Heading1", "1", "Ueberschrift1"),
     so the style's own name ("heading 1", "Title") decides."""
     try:
-        styles = ElementTree.fromstring(archive.read("word/styles.xml"))
+        styles_xml = _read_zip_member(archive, "word/styles.xml", max_bytes)
     except KeyError:
         return {}
+    styles = ElementTree.fromstring(styles_xml)
     levels = {}
     for style in styles.iter(f"{_W}style"):
         name_el = style.find(f"{_W}name")

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Support both synchronous and asynchronous `MemoryStore` and `SearchBackend` implementations in
+  `make_memory_tool` and `make_search_tool` while preserving synchronous return semantics for
+  existing sync stores; expose `ToolSpec.access` on `ToolRecord` and `tool_call`/`tool_result`
+  `RunEvent` payloads, align `make_delegate_tool` access with its children's highest tool access
+  (rejecting explicit downgrades), and enforce actual streamed decompressed byte caps on `.docx`
+  and `.xlsx` archives in `documents.extract_text`.
 - Fix runtime correctness, concurrency isolation, connection pooling, and security scan gaps:
   preserve guardrail `halt` across parallel tool batches (synthesising skipped tool responses),
   deduplicate leading `system` messages in `history`, enforce `make_delegate_tool(max_per_turn=...)`

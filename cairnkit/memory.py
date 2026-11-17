@@ -16,12 +16,14 @@ a person to approve them.
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from cairnkit.memory_ops import MemoryPlan, MemoryPlanError, plan_operations, total_chars
 from cairnkit.security import first_threat_message, scan_for_threats
-from cairnkit.tools import ToolContext, ToolError, ToolSpec, tool_error, tool_result
+from cairnkit.tools import Handler, ToolContext, ToolError, ToolSpec, tool_error, tool_result
 
 DEFAULT_SNAPSHOT_CHARS = 2200  # Hermes' default MEMORY.md budget
 
@@ -77,13 +79,14 @@ def screen_memory_write(text: str) -> str | None:
 
 
 class MemoryStore(Protocol):
-    """Host-side storage. ``save`` decides whether changes apply now or wait for approval."""
+    """Host-side storage (sync or async). ``save`` decides whether changes apply now or wait
+    for approval."""
 
-    def load(self, target: str, ctx: ToolContext) -> list[str]: ...
+    def load(self, target: str, ctx: ToolContext) -> list[str] | Awaitable[list[str]]: ...
 
-    def limit(self, target: str) -> int: ...
+    def limit(self, target: str) -> int | Awaitable[int]: ...
 
-    def save(self, target: str, plan: MemoryPlan, ctx: ToolContext) -> str:
+    def save(self, target: str, plan: MemoryPlan, ctx: ToolContext) -> str | Awaitable[str]:
         """Persist (or stage) ``plan.changes``; return a short message for the model.
         Raise :class:`cairnkit.tools.ToolError` to refuse."""
         ...
@@ -105,6 +108,77 @@ _MISSING_OPERATIONS = (
 )
 
 
+async def _resolve(value: Any) -> Any:
+    return await value if inspect.isawaitable(value) else value
+
+
+def _has_async_method(obj: object, names: tuple[str, ...]) -> bool:
+    return any(inspect.iscoroutinefunction(getattr(obj, m, None)) for m in names)
+
+
+def _parse_memory_args(
+    args: dict[str, Any], targets: dict[str, str]
+) -> tuple[str, list[dict[str, Any]]] | str:
+    target = args.get("target") or (next(iter(targets)) if len(targets) == 1 else None)
+    if target not in targets:
+        raise ToolError(f"target must be one of {', '.join(targets)}")
+    operations = args.get("operations")
+    if not operations:
+        # Only operations[] is advertised, but models drift and older transcripts replay the
+        # single-change shape (and the new_text alias), so it is still accepted.
+        if not args.get("action"):
+            return tool_error(_MISSING_OPERATIONS, failure_class="invalid_args")
+        legacy = ("action", "content", "old_text", "new_text")
+        operations = [{k: args[k] for k in legacy if k in args}]
+    if not isinstance(operations, list) or not all(isinstance(o, dict) for o in operations):
+        raise ToolError("operations must be a list of {action, content?, old_text?} objects")
+    return target, operations
+
+
+def _plan_or_early_result(
+    entries: list[str], operations: list[dict[str, Any]], limit: int
+) -> MemoryPlan | str:
+    try:
+        plan = plan_operations(entries, operations, limit)
+    except MemoryPlanError as exc:
+        return tool_error(exc.message, failure_class=exc.failure_class, **exc.extra)
+    if not plan.changes:
+        return tool_result(message=" ".join(plan.messages), usage=f"{total_chars(entries)}/{limit}")
+    return plan
+
+
+def _saved_result(message: str, plan: MemoryPlan, limit: int) -> str:
+    return tool_result(
+        message=message,
+        changes=len(plan.changes),
+        usage=f"{total_chars(plan.entries):,}/{limit:,}",
+    )
+
+
+async def _finish_memory_async(
+    store: MemoryStore,
+    target: str,
+    operations: list[dict[str, Any]],
+    entries_or_awaitable: Any,
+    limit_or_awaitable: Any,
+    ctx: ToolContext,
+) -> str:
+    entries = await _resolve(entries_or_awaitable)
+    limit = await _resolve(limit_or_awaitable)
+    planned = _plan_or_early_result(entries, operations, limit)
+    if isinstance(planned, str):
+        return planned
+    message = await _resolve(store.save(target, planned, ctx))
+    return _saved_result(message, planned, limit)
+
+
+async def _finish_save_async(
+    message_awaitable: Awaitable[str], plan: MemoryPlan, limit: int
+) -> str:
+    message = await message_awaitable
+    return _saved_result(message, plan, limit)
+
+
 def make_memory_tool(
     store: MemoryStore,
     targets: dict[str, str],
@@ -116,43 +190,43 @@ def make_memory_tool(
     """Build the memory tool. ``targets`` maps target name -> what it holds."""
     target_help = "; ".join(f"'{k}' = {v}" for k, v in targets.items())
 
-    def handler(args: dict[str, Any], ctx: ToolContext) -> str:
-        target = args.get("target") or (next(iter(targets)) if len(targets) == 1 else None)
-        if target not in targets:
-            raise ToolError(f"target must be one of {', '.join(targets)}")
-        operations = args.get("operations")
-        if not operations:
-            # Only operations[] is advertised, but models drift and older transcripts replay the
-            # single-change shape (and the new_text alias), so it is still accepted.
-            if not args.get("action"):
-                return tool_error(_MISSING_OPERATIONS, failure_class="invalid_args")
-            legacy = ("action", "content", "old_text", "new_text")
-            operations = [{k: args[k] for k in legacy if k in args}]
-        if not isinstance(operations, list) or not all(isinstance(o, dict) for o in operations):
-            raise ToolError("operations must be a list of {action, content?, old_text?} objects")
+    async def async_handler(args: dict[str, Any], ctx: ToolContext) -> str:
+        parsed = _parse_memory_args(args, targets)
+        if isinstance(parsed, str):
+            return parsed
+        target, operations = parsed
+        return await _finish_memory_async(
+            store, target, operations, store.load(target, ctx), store.limit(target), ctx
+        )
+
+    def sync_handler(args: dict[str, Any], ctx: ToolContext) -> str | Awaitable[str]:
+        parsed = _parse_memory_args(args, targets)
+        if isinstance(parsed, str):
+            return parsed
+        target, operations = parsed
         entries = store.load(target, ctx)
         limit = store.limit(target)
-        try:
-            plan = plan_operations(entries, operations, limit)
-        except MemoryPlanError as exc:
-            return tool_error(exc.message, failure_class=exc.failure_class, **exc.extra)
-        if not plan.changes:
-            return tool_result(
-                message=" ".join(plan.messages), usage=f"{total_chars(entries)}/{limit}"
-            )
-        message = store.save(target, plan, ctx)
-        return tool_result(
-            message=message,
-            changes=len(plan.changes),
-            usage=f"{total_chars(plan.entries):,}/{limit:,}",
-        )
+        if inspect.isawaitable(entries) or inspect.isawaitable(limit):
+            return _finish_memory_async(store, target, operations, entries, limit, ctx)
+        assert isinstance(entries, list) and isinstance(limit, int)
+        planned = _plan_or_early_result(entries, operations, limit)
+        if isinstance(planned, str):
+            return planned
+        message = store.save(target, planned, ctx)
+        if inspect.isawaitable(message):
+            return _finish_save_async(message, planned, limit)
+        return _saved_result(message, planned, limit)
+
+    chosen: Handler = (
+        async_handler if _has_async_method(store, ("load", "limit", "save")) else sync_handler
+    )
 
     return ToolSpec(
         name=name,
         description=f"{description} Targets: {target_help}.",
         access="propose",
         roles=frozenset(roles) if roles else None,
-        handler=handler,
+        handler=chosen,
         parameters={
             "type": "object",
             "properties": {

@@ -29,7 +29,7 @@ from cairnkit.llm.errors import classify_error
 from cairnkit.llm.fallback import AllModelsFailed
 from cairnkit.prompt import PromptParts, build_system_prompt
 from cairnkit.skills import SkillLibrary
-from cairnkit.tools import ToolContext, ToolRegistry, ToolSpec, tool_error
+from cairnkit.tools import Access, ToolContext, ToolRegistry, ToolSpec, tool_error
 from cairnkit.types import Message, ToolCall, Usage
 
 StopReason = Literal["completed", "max_iterations", "guardrail"]
@@ -50,6 +50,7 @@ class ToolRecord:
     arguments: dict[str, Any] | None
     result: str
     failed: bool
+    access: Access = "read"
 
 
 @dataclass
@@ -179,7 +180,16 @@ class Agent:
                         skipped = tool_error(
                             "skipped: turn halted by guardrail after an earlier tool call"
                         )
-                        result.tool_records.append(ToolRecord(call.name, None, skipped, True))
+                        skipped_spec = by_name.get(call.name)
+                        result.tool_records.append(
+                            ToolRecord(
+                                call.name,
+                                None,
+                                skipped,
+                                True,
+                                skipped_spec.access if skipped_spec else "read",
+                            )
+                        )
                         messages.append(
                             {"role": "tool", "tool_call_id": call.id, "content": skipped}
                         )
@@ -299,19 +309,37 @@ class Agent:
         if not decision.allows_execution:
             await _emit(on_event, RunEvent("guardrail", {"tool": call.name, "code": decision.code}))
             result.tool_records.append(
-                ToolRecord(call.name, arguments, tool_error(decision.message), True)
+                ToolRecord(call.name, arguments, tool_error(decision.message), True, spec.access)
             )
             return tool_error(decision.message), True
 
         await _emit(
             on_event,
-            RunEvent("tool_call", {"id": call.id, "tool": call.name, "arguments": arguments}),
+            RunEvent(
+                "tool_call",
+                {
+                    "id": call.id,
+                    "tool": call.name,
+                    "arguments": arguments,
+                    "access": spec.access,
+                },
+            ),
         )
         outcome = await self._registry.dispatch(spec, arguments, ctx)
-        result.tool_records.append(ToolRecord(call.name, arguments, outcome.result, outcome.failed))
+        result.tool_records.append(
+            ToolRecord(call.name, arguments, outcome.result, outcome.failed, spec.access)
+        )
         await _emit(
             on_event,
-            RunEvent("tool_result", {"id": call.id, "tool": call.name, "failed": outcome.failed}),
+            RunEvent(
+                "tool_result",
+                {
+                    "id": call.id,
+                    "tool": call.name,
+                    "failed": outcome.failed,
+                    "access": spec.access,
+                },
+            ),
         )
         after = guard.after_call(call.name, arguments, outcome.result, outcome.failed)
         if after.action == "halt":

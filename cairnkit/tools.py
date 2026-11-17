@@ -116,6 +116,9 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
+    def specs(self) -> list[ToolSpec]:
+        return [self._tools[n] for n in self.names()]
+
     def available(self, allowed: list[str] | None, ctx: ToolContext) -> list[ToolSpec]:
         """Tools in ``allowed`` (all when None) that the principal's roles permit."""
         names = self.names() if allowed is None else allowed

@@ -307,3 +307,62 @@ def test_chinese_legacy_text_is_read_as_gb18030_and_western_stays_cp1252():
     assert "GB18030" in chinese.warnings[0]
     western = extract_text("Crème brûlée, café".encode("cp1252"), "menu.md")
     assert western.text == "Crème brûlée, café" and western.warnings == ("The text was not UTF-8.",)
+
+
+def _forge_zip_uncompressed_sizes(raw: bytes, fake_size: int = 16) -> bytes:
+    """Patch uncompressed size fields in local and central ZIP headers to simulate a zip bomb."""
+    import struct
+
+    patched = bytearray(raw)
+    fake = struct.pack("<I", fake_size)
+    pos = 0
+    while (idx := patched.find(b"PK\x03\x04", pos)) != -1:
+        patched[idx + 22 : idx + 26] = fake
+        pos = idx + 4
+    pos = 0
+    while (idx := patched.find(b"PK\x01\x02", pos)) != -1:
+        patched[idx + 24 : idx + 28] = fake
+        pos = idx + 4
+    return bytes(patched)
+
+
+def test_forged_zip_header_and_deflated_expansion_limits():
+    # 1. Honest deflated .docx and .xlsx exceeding max_unzipped_bytes fail with 'too_large'.
+    deflated_buf = io.BytesIO()
+    with zipfile.ZipFile(deflated_buf, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr(
+            "word/document.xml",
+            f"<w:document {W}><w:body>{para('A' * 8000)}</w:body></w:document>",
+        )
+    deflated_docx = deflated_buf.getvalue()
+    assert len(deflated_docx) < 600  # small compressed upload, large decompressed XML
+    with pytest.raises(DocumentError) as over_exc:
+        extract_text(deflated_docx, "big.docx", limits=Limits(max_unzipped_bytes=1000))
+    assert over_exc.value.code == "too_large"
+    assert (
+        len(extract_text(deflated_docx, "big.docx", limits=Limits(max_unzipped_bytes=20_000)).text)
+        == 8000
+    )
+
+    # 2. Tampered ZIP headers lying about file_size (16 bytes claimed for a 200KB deflate stream)
+    # are rejected via bounded chunked reads without triggering unbounded read(-1) decompression.
+    bomb_buf = io.BytesIO()
+    with zipfile.ZipFile(bomb_buf, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr(
+            "word/document.xml",
+            f"<w:document {W}><w:body>{para('Z' * 200_000)}</w:body></w:document>",
+        )
+    forged_docx = _forge_zip_uncompressed_sizes(bomb_buf.getvalue(), fake_size=16)
+    with zipfile.ZipFile(io.BytesIO(forged_docx)) as check_zf:
+        assert sum(i.file_size for i in check_zf.infolist()) < 100
+    with pytest.raises(DocumentError) as forged_exc:
+        extract_text(forged_docx, "forged.docx", limits=Limits(max_unzipped_bytes=1000))
+    assert forged_exc.value.code in ("too_large", "unreadable")
+
+    xlsx_bytes = make_xlsx(lambda book: [book.active.append(["x" * 200]) for _ in range(40)])
+    forged_xlsx = _forge_zip_uncompressed_sizes(xlsx_bytes, fake_size=8)
+    with pytest.raises(DocumentError) as xlsx_exc:
+        extract_text(forged_xlsx, "forged.xlsx", limits=Limits(max_unzipped_bytes=1000))
+    assert xlsx_exc.value.code in ("too_large", "unreadable")

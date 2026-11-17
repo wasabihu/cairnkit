@@ -226,3 +226,67 @@ async def test_passing_full_messages_as_history_does_not_duplicate_system_prompt
     assert [m["role"] for m in sent].count("system") == 1
     assert sent[0]["content"] == first.system_prompt
     assert second.system_prompt == first.system_prompt
+
+
+async def test_tool_access_is_exposed_in_events_and_records():
+    from cairnkit import ModelResponse, ToolCall
+
+    tools = ToolRegistry()
+
+    @tools.tool(name="inspect_rec", description="Read.", access="read")
+    def inspect_rec(args, ctx):
+        if args.get("fail"):
+            raise ToolError("read failed")
+        return {"ok": True}
+
+    @tools.tool(name="stage_draft", description="Propose.", access="propose")
+    def stage_draft(args, ctx):
+        return {"draft": 1}
+
+    @tools.tool(name="commit_row", description="Write.", access="write")
+    def commit_row(args, ctx):
+        return {"saved": 1}
+
+    events = []
+    batch_halt = ModelResponse(
+        content=None,
+        tool_calls=[
+            ToolCall("c3", "inspect_rec", '{"fail": true}'),
+            ToolCall("c4", "commit_row", "{}"),
+        ],
+    )
+    model = ScriptedModel(
+        [
+            call("stage_draft", {}, "c1"),
+            call("inspect_rec", {}, "c2"),
+            batch_halt,
+            say("finished"),
+        ]
+    )
+    agent = Agent(
+        spec(
+            tools=["inspect_rec", "stage_draft", "commit_row"],
+            max_iterations=5,
+            guardrails=GuardrailConfig(same_tool_failure_halt_after=1),
+        ),
+        model=model,
+        tools=tools,
+    )
+    result = await agent.run("run all", ToolContext(), on_event=events.append)
+    assert [(r.name, r.access, r.failed) for r in result.tool_records] == [
+        ("stage_draft", "propose", False),
+        ("inspect_rec", "read", False),
+        ("inspect_rec", "read", True),
+        ("commit_row", "write", True),  # skipped after halt, still preserves declared access
+    ]
+    call_events = [
+        (e.kind, e.data["tool"], e.data["access"])
+        for e in events
+        if e.kind in ("tool_call", "tool_result")
+    ]
+    assert call_events[:4] == [
+        ("tool_call", "stage_draft", "propose"),
+        ("tool_result", "stage_draft", "propose"),
+        ("tool_call", "inspect_rec", "read"),
+        ("tool_result", "inspect_rec", "read"),
+    ]
